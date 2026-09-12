@@ -1,0 +1,134 @@
+{
+  "WORLD2WEB": {
+    "Settings": {
+      "EnableDevMode": {
+        "Name": "Enable Dev Mode",
+        "Hint": "Shows the 'Dev Sync' button (downloads the collected payload as JSON, for local use and development.) Off by default."
+      },
+      "AllowPlayerSelfPublish": {
+        "Name": "Allow Player Self-Publish",
+        "Hint": "Lets a player who owns a journal entry (Foundry's own Owner permission) see and use that entry's Blog Settings, Post Settings, and publish controls themselves.  Will communicate the github token to their browser, so only enable this if you trust your players not to abuse it. Off by default."
+      },
+      "DeploySite": {
+        "Name": "Set Up Your Site",
+        "Label": "Setup Wizard",
+        "Hint": "Create a world2web site on Netlify, Cloudflare, or Vercel from the site template.  Requires an account at that provider, as well as a GitHub account."
+      },
+      "GithubOwner": {
+        "Name": "GitHub Repo Owner",
+        "Hint": "Your GitHub username or org, e.g. 'alice' in github.com/alice/my-campaign-blog."
+      },
+      "GithubRepo": {
+        "Name": "GitHub Repo Name",
+        "Hint": "e.g. 'my-campaign-blog' in github.com/alice/my-campaign-blog."
+      },
+      "GithubBranch": {
+        "Name": "GitHub Branch",
+        "Hint": "The branch your host (Netlify/Cloudflare Pages/etc.) builds from."
+      },
+      "GithubToken": {
+        "Name": "GitHub Personal Access Token",
+        "Hint": "Fine-grained token.  Recommended to create a token with permissions to only this one repo, Contents: Read and write permission."
+      },
+      "SiteTheme": {
+        "Name": "Site Theme",
+        "Hint": "A theme name (e.g. 'midnight') matching one built into the site template's own styles/tokens.css, or blank/'default' for the site's built-in look."
+      },
+      "AllowThemeOverride": {
+        "Name": "Allow Visitor Theme Override",
+        "Hint": "Lets site visitors pick their own theme from a dropdown, saved in their own browser -- overriding Site Theme above just for them. Off by default: Site Theme applies to everyone, and the dropdown doesn't appear at all."
+      },
+      "SiteName": {
+        "Name": "Site Name",
+        "Hint": "Replaces \"World2Web\" as the site's name/branding (page title, homepage heading, breadcrumbs)."
+      },
+      "BlogsSegment": {
+        "Name": "Blogs URL Segment",
+        "Hint": "The URL segment for blogs on the site, e.g. yoursite.com/<world>/<this>/<blog>/. Gets slugified automatically, so spaces/capitals are fine to type here. Defaults to \"journals\"."
+      }
+    },
+    "Notify": {
+      "Prefix": "World2Web",
+      "MissingGithubConfig": "can't publish -- GitHub Repo Owner, Repo Name, and Token must all be set first. Check Configure Settings.",
+      "NothingToPublish": "no journals are marked as published -- nothing to publish.",
+      "Published": "pushed {posts} post(s) and {assets} asset(s) to GitHub, retracted {retracted} deleted page(s).",
+      "UpToDate": "everything already up to date on GitHub.",
+      "Collected": "collected {count} blog(s).",
+      "PublishFailed": "publish failed -- {error}",
+      "BlogSettingsSaved": "blog settings saved for \"{name}\".",
+      "PagePublished": "\"{name}\" published.",
+      "PageUnpublished": "\"{name}\" unpublished.",
+      "PageRepublished": "\"{name}\" republished.",
+      "PageTypeNotPublishable": "\"{name}\" is a {type} page -- only text and image pages can be published.",
+      "NoCurrentPage": "couldn't determine which page to publish -- see console.",
+      "PostSettingsSaved": "post settings saved for \"{name}\".",
+      "DeploySiteSaved": "GitHub Repo Owner, Repo Name, and Token saved. Try Publish to Web whenever you're ready."
+    },
+    "Button": {
+      "DevSync": "Dev Sync",
+      "Syncing": "Syncing…",
+      "PublishToWeb": "Publish to Web",
+      "Publishing": "Publishing…"
+    },
+    "Aria": {
+      "BlogSettings": "Blog Publishing Settings",
+      "Publish": "Publish",
+      "PostSettings": "Post Settings"
+    },
+    "Tooltip": {
+      "BlogSettings": "Blog Publishing Settings (World2Web)",
+      "PublishDirty": "Republish -- changed since last publish",
+      "PublishCleanPending": "Published locally -- click Publish to Web to make it live (click here to unpublish instead)",
+      "PublishCleanLive": "Published and live (click to unpublish)",
+      "PublishNeverPending": "Unpublished -- click Publish to Web to remove it from the live site",
+      "PublishNever": "Publish (World2Web)",
+      "PostSettings": "Post Settings (World2Web)"
+    },
+    "Dialog": {
+      "Title": "Blog Settings: {name}",
+      "PublishLabel": "Publish this journal as a blog",
+      "PublishHint": "Unchecking this retracts every one of this journal's already-published posts from the site on the next publish (they don't get deleted from GitHub -- there's no way to -- but they stop showing up). Re-checking it later brings back whichever pages are still individually marked published.",
+      "AuthorActorLabel": "Author Actor override",
+      "AuthorActorHint": "Drag an Actor here from the sidebar, a compendium, or a scene token -- or type/paste its UUID directly (right-click it → \"Copy Document UUID\") -- to author this blog as that Actor. Name, portrait, and (system permitting) biography all come from it, and it wins outright over the name/image overrides below rather than combining with them. Lets a GM write in an NPC's voice, not just default to whoever owns the journal.",
+      "AuthorNameLabel": "Author name override",
+      "AuthorNameHint": "Ignored if Author Actor override above is set. Otherwise defaults to the first non-GM user with Owner permission on this journal, shown as their assigned character's name (or their own Foundry username if they don't have one). Falls back to \"Game Master\" if no player owns it. No biography in this mode -- there's no Actor to pull one from.",
+      "AuthorImageLabel": "Author image override",
+      "AuthorImageHint": "Ignored if Author Actor override above is set. Path or URL. Defaults to that same owner's character portrait, if they have one.",
+      "RootLabel": "Root path override",
+      "RootHint": "A \"/\"-separated list of folder names, e.g. \"Campaign/Arc 1\" -- placed between /blogs/&lt;world&gt;/ and this blog's own address on the site, and each folder in the list becomes its own browsable page there too. Defaults to this journal's own folder hierarchy in Foundry.",
+      "TagsLabel": "Tags (comma-separated)",
+      "PostOrderLabel": "Post order",
+      "PostOrderNewest": "Newest first",
+      "PostOrderOldest": "Oldest first",
+      "PostOrderManual": "Manual (same order as this journal's page list in Foundry)",
+      "PostOrderHint": "Order of this blog's own post listing only -- recent-posts widgets and author/tag archives elsewhere on the site always show newest first regardless. For Manual: reordering pages here doesn't update the live site by itself -- click Publish to Web (or Dev Sync) again afterward to push the new order.",
+      "DefaultPlaceholder": "Default: {value}",
+      "None": "(none)",
+      "Save": "Save",
+      "Cancel": "Cancel",
+      "PostTitle": "Post Settings: {name}",
+      "PostAuthorActorHint": "Same as the blog-level Author Actor override (drag an Actor here, or type/paste its UUID), but for this one post only -- wins outright over this post's own name/image overrides below. Leave blank to use this blog's own author (shown as the placeholder below) for this post.",
+      "PostAuthorNameHint": "Ignored if this post's own Author Actor override above is set. Leave blank to use this blog's own author (shown as the placeholder below) for this post -- no biography in this mode either way, same as the blog-level override.",
+      "PostAuthorImageHint": "Ignored if this post's own Author Actor override above is set. Path or URL. Leave blank to use this blog's own author's portrait for this post.",
+      "PostTagsHint": "Fully replaces this blog's own tags for this one post -- doesn't add to them. Leave blank to use this blog's own tags for this post.",
+      "FrontImageLabel": "Front image",
+      "FrontImageHint": "This post's featured image -- an Actor's UUID is NOT accepted here, just a direct path or URL (e.g. from Foundry's own file picker, or an external link). Never auto-derived from the post's own body content. Blank means no front image for this post -- there's no blog-level default to fall back to.",
+      "DeploySiteTitle": "Deploy Your Site",
+      "DeployStep1Of3": "Step 1 of 3: Name your site and choose a host",
+      "DeployStep2Of3": "Step 2 of 3: Create a GitHub token",
+      "DeployStep3Of3": "Step 3 of 3: Save your details",
+      "DeploySiteIntro": "Pick a host below to open its own one-click deploy page in a new tab. Each generates a new repo from the World2Web site template under your own GitHub account and hosts it there -- both in one flow, on that host's own site, with its own deploy authentication handled behind the scenes (the separate Cloudflare API token this module's README mentions is for its fully-manual setup path -- it doesn't come up in this one-click flow).",
+      "DeploySiteFirstBuildNote": "Deployment may trigger automatically and fail with no content, but will publish successfully when you publish.",
+      "DeploySiteRepoNameLabel": "Repo name",
+      "DeploySiteRepoNameHint": "At Cloudflare/Netlify/Vercel, make sure to pick the same repository name you used here.",
+      "DeploySiteDeployToLabel": "Deploy to:",
+      "DeploySiteAlreadyConfiguredWarning": "<strong>Heads up:</strong> GitHub Repo Owner/Name/Token are already set here (currently pointing at \"{owner}/{repo}\"). Continuing creates a brand-new, separate repo and site -- it won't touch your existing one by itself. But finishing this wizard afterward (step 3) will repoint World2Web at the new one, and it'll stop publishing to your current site -- which stays live at its existing URL either way, just frozen, not deleted. Only continue if you actually mean to switch sites (or want a genuinely separate second one).",
+      "DeploySiteTokenIntro": "Foundry needs its own GitHub token to push posts to your new repo -- none of these deploy flows create one for you, so this is still a separate step on GitHub's own site. The button below opens GitHub's token creation page with the right owner and \"Contents: Read and write\" permission already pre-filled -- under \"Only select repositories,\" pick <strong>{repo}</strong> (there's no way to pre-select that part), then Generate token and copy it before continuing to the last step.",
+      "DeploySiteSaveIntro": "Paste in your new repo's owner, name, and the token you just copied -- this saves them directly, the same as the fields in Configure Settings.",
+      "OpenGithubTokenPage": "Open GitHub & Continue",
+      "DeployNetlify": "Netlify",
+      "DeployCloudflare": "Cloudflare",
+      "DeployVercel": "Vercel"
+    }
+  }
+}

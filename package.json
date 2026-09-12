@@ -1,0 +1,10 @@
+{
+  "name": "world2web-foundry-module",
+  "private": true,
+  "type": "module",
+  "version": "0.11.0",
+  "description": "Not an npm package -- module.json is what Foundry reads. This file only exists so Node's test runner treats scripts/*.js as ES modules without a warning.",
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs"
+  }
+}
