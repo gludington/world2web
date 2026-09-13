@@ -42,14 +42,14 @@ async function withMockFetch(responses, fn) {
 test("putFile creates a new file when none exists (no sha sent)", async () => {
   await withMockFetch(
     {
-      "GET /repos/me/repo/contents/content/worlds/codex/blogs/thoric/post.md": jsonResponse(404, {}),
-      "PUT /repos/me/repo/contents/content/worlds/codex/blogs/thoric/post.md": jsonResponse(201, { commit: { sha: "new" } }),
+      "GET /repos/me/repo/contents/content/worlds/codex/journals/thoric/post.md": jsonResponse(404, {}),
+      "PUT /repos/me/repo/contents/content/worlds/codex/journals/thoric/post.md": jsonResponse(201, { commit: { sha: "new" } }),
     },
     async (mocked) => {
       const result = await putFile({
         owner: "me",
         repo: "repo",
-        path: "content/worlds/codex/blogs/thoric/post.md",
+        path: "content/worlds/codex/journals/thoric/post.md",
         content: "hello",
         message: "add post",
         token: "tok",
@@ -65,17 +65,17 @@ test("putFile creates a new file when none exists (no sha sent)", async () => {
 test("putFile updates an existing file, sending its current sha", async () => {
   await withMockFetch(
     {
-      "GET /repos/me/repo/contents/content/worlds/codex/blogs/thoric/post.md": jsonResponse(200, {
+      "GET /repos/me/repo/contents/content/worlds/codex/journals/thoric/post.md": jsonResponse(200, {
         sha: "abc123",
         content: b64("old content"),
       }),
-      "PUT /repos/me/repo/contents/content/worlds/codex/blogs/thoric/post.md": jsonResponse(200, { commit: { sha: "def456" } }),
+      "PUT /repos/me/repo/contents/content/worlds/codex/journals/thoric/post.md": jsonResponse(200, { commit: { sha: "def456" } }),
     },
     async (mocked) => {
       const result = await putFile({
         owner: "me",
         repo: "repo",
-        path: "content/worlds/codex/blogs/thoric/post.md",
+        path: "content/worlds/codex/journals/thoric/post.md",
         content: "new content",
         message: "update post",
         token: "tok",
@@ -91,7 +91,7 @@ test("putFile updates an existing file, sending its current sha", async () => {
 test("putFile skips the write entirely when content is byte-identical", async () => {
   await withMockFetch(
     {
-      "GET /repos/me/repo/contents/content/worlds/codex/blogs/thoric/post.md": jsonResponse(200, {
+      "GET /repos/me/repo/contents/content/worlds/codex/journals/thoric/post.md": jsonResponse(200, {
         sha: "abc123",
         content: b64("same content"),
       }),
@@ -100,7 +100,7 @@ test("putFile skips the write entirely when content is byte-identical", async ()
       const result = await putFile({
         owner: "me",
         repo: "repo",
-        path: "content/worlds/codex/blogs/thoric/post.md",
+        path: "content/worlds/codex/journals/thoric/post.md",
         content: "same content",
         message: "no-op",
         token: "tok",
@@ -234,7 +234,7 @@ test("retractDeletedPost is a no-op (returns true, no PUT) when the file is alre
 
 test("retractDeletedPost backs off (returns true, no PUT) when expectedUuid no longer matches -- the path was reclaimed by a different, live post", async () => {
   // Regression test for a real race: a brand-new page published with the
-  // same resulting slug (same title/blog/root) as a just-deleted one
+  // same resulting slug (same title/journal/root) as a just-deleted one
   // computes the identical file path -- pushFiles() can overwrite that
   // path with the new page's own live content earlier in the very same
   // publish run, before this function ever runs. Without checking the
