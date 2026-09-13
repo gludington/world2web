@@ -19,7 +19,7 @@
 const BIOGRAPHY_EXTRACTORS = {
   // dnd5e's NPC sheet splits biography into `value` (full text, meant for
   // the GM's eyes -- can hold spoilers/secrets) and `public` (the
-  // player-facing version). A blog author bio is public by definition, so
+  // player-facing version). A journal author bio is public by definition, so
   // an NPC always reads from `public`, never `value`, even when `public`
   // is blank -- there's no safe fallback to `value` here. PCs only ever
   // have `value` (no GM/player split), so that's the one to use for them.

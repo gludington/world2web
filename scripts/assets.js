@@ -1,5 +1,5 @@
 /**
- * Content-addresses images referenced by a collectBlogData() payload --
+ * Content-addresses images referenced by a collectJournalData() payload --
  * each post's own author portrait, its front image, and any <img> pasted
  * into its content -- so the published site doesn't depend on the
  * Foundry server staying online to serve them (directly undermines
@@ -48,9 +48,9 @@ export function rewriteImageSrcs(html, urlMap) {
 /** Every image URL referenced anywhere in the payload: each post's own
  * (already-resolved, per collector.js's resolvePostAuthor) author
  * portrait, its front image (if any), and every <img src> in its html.
- * Deliberately scanned per-post, not per-blog, off blog.author -- a post
- * can override its own author (and front image has no blog-level
- * equivalent at all), so blog.author.image alone would miss any image
+ * Deliberately scanned per-post, not per-journal, off journal.author -- a post
+ * can override its own author (and front image has no journal-level
+ * equivalent at all), so journal.author.image alone would miss any image
  * reachable only through a post-level override.
  *
  * Skips any post with unpublished: true -- collector.js keeps a full post
@@ -66,8 +66,8 @@ export function rewriteImageSrcs(html, urlMap) {
  * collected via that post instead, same as always. Deduped. */
 export function collectAssetUrls(payload) {
   const urls = new Set();
-  for (const blog of payload.blogs ?? []) {
-    for (const post of blog.posts ?? []) {
+  for (const journal of payload.journals ?? []) {
+    for (const post of journal.posts ?? []) {
       if (post.unpublished) continue;
       if (post.author?.image) urls.add(post.author.image);
       if (post.frontImage) urls.add(post.frontImage);
@@ -83,13 +83,13 @@ export function collectAssetUrls(payload) {
  * something we chose not to handle) are left pointing at Foundry
  * unchanged -- same as before this feature existed, not a new failure.
  * Safe even when several posts share the same author object by reference
- * (the common "no override, inherits the blog's" case) -- rewriting one
+ * (the common "no override, inherits the journal's" case) -- rewriting one
  * post's author.image in place is visible to every post sharing that
  * object, and urlMap.has() on an already-rewritten (local) path is
  * simply false for the rest, a harmless no-op. */
 export function rewriteAssetReferences(payload, urlMap) {
-  for (const blog of payload.blogs ?? []) {
-    for (const post of blog.posts ?? []) {
+  for (const journal of payload.journals ?? []) {
+    for (const post of journal.posts ?? []) {
       if (post.author?.image && urlMap.has(post.author.image)) {
         post.author.image = urlMap.get(post.author.image);
       }

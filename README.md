@@ -1,6 +1,6 @@
 # World2Web
 
-Publishes in-character session blogs from Foundry VTT to a static site, readable even when the
+Publishes in-character session journals from Foundry VTT to a static site, readable even when the
 world isn't running.
 
 Neither the Astro site nor the local `scripts/ingest.js` "Dev Sync" companion script lives in
@@ -13,29 +13,29 @@ there directly, not developed here.
 
 ## Model
 
-- **Blog** = any journal entry explicitly marked published via the **Blog Publishing Settings**
+- **Journal** = any journal entry explicitly marked published via the **Publishing Settings**
   dialog on its sheet (gear icon in the header) — no folder scoping, any entry anywhere can opt
-  in. Every blog/post control is GM-only by default; a GM can opt into letting an owning player
-  control (and self-publish) their own blogs too — see **Player self-publish** below. That dialog
+  in. Every journal/post control is GM-only by default; a GM can opt into letting an owning player
+  control (and self-publish) their own journals too — see **Player self-publish** below. That dialog
   also sets three more things, each with a sensible default that can be overridden:
   - **Author** — defaults to the first non-GM user with **Owner** permission on the entry,
     resolved to their assigned character (name + portrait); falls back to "Game Master" if no
     player owns it. The dialog can override this with an explicit name/image instead.
   - **Root** — a URL path prefix, not just a label. Defaults to the entry's containing folder,
     walked hierarchically up to the root (e.g. `Arc 1/Session Notes`), overridable with any
-    string. Slugified segment-by-segment and prepended to the blog's own slug -- a root of
-    `Arc 1/Session Notes` makes a blog end up at
-    `/<world>/<blogs segment>/arc-1/session-notes/<blog-slug>/` instead of
-    `/<world>/<blogs segment>/<blog-slug>/` (see **Site settings** below for `<blogs segment>`).
+    string. Slugified segment-by-segment and prepended to the journal's own slug -- a root of
+    `Arc 1/Session Notes` makes a journal end up at
+    `/<world>/<journals segment>/arc-1/session-notes/<journal-slug>/` instead of
+    `/<world>/<journals segment>/<journal-slug>/` (see **Site settings** below for `<journals segment>`).
   - **Tags** — a freeform, user-defined list. Empty by default.
-- **Post** = a page within a published blog's journal entry, but only once **explicitly
+- **Post** = a page within a published journal entry, but only once **explicitly
   published** — draft pages are never collected. Publishing is a manual per-page action (see
   below); it stamps `publishedAt` (set once, on first publish) and `updatedAt` (bumped every
   republish) onto the page's own flags. Chronological order comes from `publishedAt`, not any
   in-story date field — there isn't one, deliberately. A post can also override its own author and/or tags via its own **Post Settings**
   dialog (gear icon next to the publish icon) — each independently, either falls back to the
-  blog's own resolved value when left blank, and a post has its own optional **front image** too
-  (a direct path/URL, no blog-level equivalent). Deleting a page or an entire journal entry (as
+  journal's own resolved value when left blank, and a post has its own optional **front image** too
+  (a direct path/URL, no journal-level equivalent). Deleting a page or an entire journal entry (as
   opposed to unpublishing it) is handled separately — see **Deleted pages/entries** below.
 
 ## Install (dev symlink)
@@ -48,8 +48,8 @@ Then in Foundry: **Setup → Manage Modules** (per world) → enable **World2Web
 
 ## Use
 
-1. Open any journal entry you want to publish as a blog. Click the gear-icon **Blog Publishing
-   Settings** button in its header, check **Publish this journal as a blog**, optionally fill in
+1. Open any journal entry you want to publish. Click the gear-icon **Publishing
+   Settings** button in its header, check **Publish this journal to the web**, optionally fill in
    an author/root/tag override, and save. Foundry ownership (Owner permission) on the entry
    determines the default author if you don't override it: the entry's owning player's assigned
    character (name, portrait, and -- system permitting -- biography, all pulled live from that
@@ -91,11 +91,11 @@ Then in Foundry: **Setup → Manage Modules** (per world) → enable **World2Web
    ever means "downloaded," nothing about GitHub.
 3. Each page also gets a second small icon next to its publish icon: a gear, opening **Post
    Settings** for that one page -- author, tags, and front image, all scoped to this post only.
-   Author and tags each mirror the blog-level dialog's own fields (Author Actor override /
+   Author and tags each mirror the journal-level dialog's own fields (Author Actor override /
    Author name+image override / Tags), and work the same "blank = inherit" way: leave them blank
-   and the post uses its blog's own already-resolved author/tags unchanged; fill one in and it
-   fully replaces the blog's value for this post alone (tags especially: it's a full replace, not
-   an add-to-the-blog's-list). **Front image** has no blog-level equivalent at all -- a direct
+   and the post uses its journal's own already-resolved author/tags unchanged; fill one in and it
+   fully replaces the journal's value for this post alone (tags especially: it's a full replace, not
+   an add-to-the-journal's-list). **Front image** has no journal-level equivalent at all -- a direct
    path or URL only (not an Actor UUID), shown as this post's featured image on the site, blank by
    default and never auto-derived from the post's own body content. Changing any of these on a
    post that's already been published bumps its dirty state, same as editing the post's own text
@@ -120,7 +120,7 @@ so there's no local script to run and no server of ours in the middle — see
 for the full turnkey walkthrough (create a repo from that template, generate a token, connect a
 host). Settings needed:
 
-- **GitHub Repo Owner** / **GitHub Repo Name** — e.g. `alice` / `my-campaign-blog`.
+- **GitHub Repo Owner** / **GitHub Repo Name** — e.g. `alice` / `my-campaign-site`.
 - **GitHub Branch** — whatever your host builds from (`main` by default).
 - **GitHub Personal Access Token** — a fine-grained token scoped to just that repo, `Contents:
   Read and write` permission. Not encrypted at rest by Foundry's settings storage, which is why
@@ -137,15 +137,15 @@ freshly re-fetched `sha` before surfacing an actual error.
 
 ### Player self-publish
 
-Every blog/post control (Blog Settings, Post Settings, the publish icons) is GM-only by default.
+Every journal/post control (Publishing Settings, Post Settings, the publish icons) is GM-only by default.
 **Allow Player Self-Publish** (a world setting, off by default) lets a player who owns a journal
 entry — Foundry's own Owner permission level, the same one `resolveDefaultAuthor()` already uses
 for author attribution — see and use that entry's controls themselves, with no GM involved.
-`canControlBlog()` in `main.js` is the single gate everything else routes through: the GM always
+`canControlJournal()` in `main.js` is the single gate everything else routes through: the GM always
 passes, a player passes only for an entry they own and only once this setting is on.
 
 A player's own "Publish to Web" click is **scoped**, not a smaller version of the GM's global one:
-`collectBlogData({ scopedToCaller: true })` (`collector.js`) restricts collection to entries the
+`collectJournalData({ scopedToCaller: true })` (`collector.js`) restricts collection to entries the
 calling user owns via that same `isOwner` check, and `retractPendingDeletions({ scopedToCaller:
 true })` (`main.js`) only retracts a deletion whose *captured ownership snapshot* (taken at the
 moment it was deleted, since the document itself won't exist anymore to check directly --
@@ -155,7 +155,7 @@ Foundry dependency, shared by both `retractPendingDeletions` and `syncButtonColo
 "a GM's publish/retraction/coloring always means *everyone's* pending work, never scoped" is one
 single, directly-tested guarantee (see "Testing" below) rather than something each call site has
 to independently get right. Between the collector-side and deletion-side scoping, a player's
-publish can only ever touch blogs -- and deletions of blogs -- they actually own; the GM's own
+publish can only ever touch journals -- and deletions of journals -- they actually own; the GM's own
 publish is untouched by any of this and still means everything, as it always has. The sync-button
 coloring (`syncButtonColor()`) is scoped the same way for a non-GM viewer, so a player's button
 doesn't sit amber over someone else's pending work their own publish would never resolve. Dev Sync
@@ -171,7 +171,7 @@ token itself can do; a fine-grained token scoped to just this one repo's `Conten
 GitHub account.
 
 **Unverified against a live instance**: the entire ownership-based gating and publish-scoping
-model above (`canControlBlog`, `collectBlogData`'s `scopedToCaller`, the scoped
+model above (`canControlJournal`, `collectJournalData`'s `scopedToCaller`, the scoped
 `retractPendingDeletions`, and the scoped `syncButtonColor`) is new and hasn't been exercised
 against a real multi-user Foundry session yet. If a player with Owner permission on an entry
 doesn't see its controls once the setting's on, or a player's publish touches something it
@@ -257,11 +257,11 @@ change and a click of Publish, same as everything else.
 - **Site Name** -- replaces "World2Web" as the site's branding (page title, homepage heading,
   breadcrumbs).
 
-- **Blogs URL Segment** (default `journals`) -- URLs are world-first:
-  `/<world>/<this>/<blog-slug>/...`, `/<world>/authors/...`, `/<world>/tags/...`. This is the
+- **Journals URL Segment** (default `journals`) -- URLs are world-first:
+  `/<world>/<this>/<journal-slug>/...`, `/<world>/authors/...`, `/<world>/tags/...`. This is the
   one segment that's configurable; `authors`/`tags` are fixed. Gets slugified automatically (the
-  site repo's `src/lib/config.ts`), so typing e.g. `My Blogs` is fine -- it becomes `my-blogs` in
-  actual URLs. Changing it moves every blog/post URL on the site (old links 404 after the next
+  site repo's `src/lib/config.ts`), so typing e.g. `My Journals` is fine -- it becomes `my-journals` in
+  actual URLs. Changing it moves every journal/post URL on the site (old links 404 after the next
   deploy), so it's meant to be set once early on, not changed casually.
 
 ## Output shape
@@ -272,9 +272,9 @@ change and a click of Publish, same as everything else.
   "world": { "id": "...", "title": "..." },
   "foundryVersion": "14.364",
   "collectorVersion": "0.5.0",
-  "siteConfig": { "theme": "default", "siteName": "World2Web", "blogsSegment": "journals", "allowThemeOverride": false },
-  "blogCount": 2,
-  "blogs": [
+  "siteConfig": { "theme": "default", "siteName": "World2Web", "journalsSegment": "journals", "allowThemeOverride": false },
+  "journalCount": 2,
+  "journals": [
     {
       "uuid": "JournalEntry.abc123",
       "title": "Thoric's Journal",
@@ -288,13 +288,13 @@ change and a click of Publish, same as everything else.
           "title": "The Bandit King's Lair",
           "html": "<p>...</p>",
           // Already fully resolved with inheritance baked in -- this
-          // post's own override if it set one, otherwise the blog's
-          // author/tags above, verbatim. See "The blog config dialog"
+          // post's own override if it set one, otherwise the journal's
+          // author/tags above, verbatim. See "The journal config dialog"
           // section below for the per-post Post Settings dialog.
           "author": { "userId": "...", "name": "Thoric", "image": "https://<your-foundry-host>/portraits/thoric.png", "isGM": false, "bio": "<p>...</p>" },
           "tags": ["heist", "waterdeep"],
           // "" (never null) when this post has no explicit front image --
-          // no blog-level equivalent to fall back to.
+          // no journal-level equivalent to fall back to.
           "frontImage": "",
           "publishedAt": 1755600000000,
           "updatedAt": 1755600000000,
@@ -306,7 +306,7 @@ change and a click of Publish, same as everything else.
 }
 ```
 
-Posts within a blog are sorted chronologically by `publishedAt` ascending.
+Posts within a journal are sorted chronologically by `publishedAt` ascending.
 
 A page that's never been published at all (no `publishedAt` on record) is excluded from `posts`
 entirely, same as always. A page that WAS published and is now unpublished is still included --
@@ -319,7 +319,7 @@ all, still in git history), and the site repo's own content queries
 never actually renders anywhere -- including its own permalink, which 404s on the next deploy
 since `getStaticPaths()` for that page is filtered too, not just the listings.
 
-`siteConfig` mirrors the **Site Theme**/**Site Name**/**Blogs URL Segment** module settings --
+`siteConfig` mirrors the **Site Theme**/**Site Name**/**Journals URL Segment** module settings --
 included here (not just pushed directly by `publishToGitHub()`) so the "Dev Sync" download, and
 `scripts/ingest.js` (site-template repo) which only ever sees that downloaded JSON, can also
 produce `content/site-config.json` without a live `game.settings`.
@@ -327,7 +327,7 @@ produce `content/site-config.json` without a live `game.settings`.
 ## Deleted pages/entries
 
 The tombstone mechanism above only works because the document is still there for
-`collectBlogData()` to visit and see a flag flip -- **deleting** a page (or a whole journal entry,
+`collectJournalData()` to visit and see a flag flip -- **deleting** a page (or a whole journal entry,
 which takes every one of its pages with it) removes it from Foundry's own collections entirely,
 so the collector has nothing left to visit. Without anything else, that would silently leave the
 already-published file live on the site forever, with no way to notice it should be retracted.
@@ -356,7 +356,7 @@ retracts anything -- purely a local preview tool, same as its existing limitatio
 
 `retractDeletedPost` also guards against a real race, not just a hypothetical one: path
 disambiguation only ever checks the *current* payload, never GitHub's history, so a brand-new page
-published with the same title (same blog/root) as a just-deleted one computes the identical
+published with the same title (same journal/root) as a just-deleted one computes the identical
 file path. If that republish and the deletion's retraction land in the same publish run,
 `pushFiles()` (which runs first) may have already overwritten that exact path with the new page's
 own live content by the time retraction gets to it. `retractDeletedPost` takes an `expectedUuid`
@@ -399,9 +399,9 @@ to the clicked page (`event.stopPropagation()` doing its job), and the multi-pag
 own header shows no publish button at all -- that's kept only for the popped-out single-page
 editor, where the whole window unambiguously is one page.
 
-## The blog config dialog
+## The journal config dialog
 
-`openBlogConfigDialog` in `main.js` uses `foundry.applications.api.DialogV2.wait` with a custom
+`openJournalConfigDialog` in `main.js` uses `foundry.applications.api.DialogV2.wait` with a custom
 HTML form, reading values back off the raw DOM form elements by name (deliberately avoiding
 `FormDataExtended`, whose exact location/behavior has moved around across the ApplicationV2
 migration). Confirmed working against a live Foundry instance, 2026-09-10.
@@ -438,16 +438,16 @@ player-owner/GM-fallback, explicit Actor override winning over manual text overr
 invalid Actor UUID falling through gracefully, and per-system biography extraction -- see
 `biography.test.mjs` for that in isolation), root resolution (default hierarchical folder path
 and explicit override), tags, chronological post ordering, per-post author/tags/front-image
-overrides -- a post with none of its own inherits its blog's author/tags unchanged; one with its
+overrides -- a post with none of its own inherits its journal's author/tags unchanged; one with its
 own Actor override, manual override, or tag list replaces them for that post only (a full
 replace, not a merge, for tags); front image resolves the same absolute-URL treatment as every
-other image reference (see "Images" above) and has no blog-level equivalent to fall back to --
-and `collectBlogData`'s `scopedToCaller` (see "Player self-publish" above), which only includes
+other image reference (see "Images" above) and has no journal-level equivalent to fall back to --
+and `collectJournalData`'s `scopedToCaller` (see "Player self-publish" above), which only includes
 entries with `isOwner: true` on the fake document, leaving the raw permission-level math itself
 to Foundry's own (already-trusted) `isOwner` getter rather than reimplementing it here.
 `render.js`'s own tests additionally cover root-path slugification (segment-by-segment, stray
-slashes collapsed), its disambiguation once prepended to a blog's own slug, and a post's own
-(already-resolved) author driving its `authorSlug` rather than its blog's.
+slashes collapsed), its disambiguation once prepended to a journal's own slug, and a post's own
+(already-resolved) author driving its `authorSlug` rather than its journal's.
 
 `render.js` (pure transform, no Foundry/network dependency), `github.js` (mocks `fetch`, same
 pattern as mocking `game`/`CONST`), `assets.js` (mixes pure string/hash functions with a
@@ -480,7 +480,7 @@ byte-identical no-op fast path for images-free HTML), deduping repeated image UR
 payload, `data:` URI decoding without a network call, a known SHA-256 vector, a failed fetch
 being skipped rather than failing the whole batch, and -- two real regressions, both caught live
 -- that `collectAssetUrls`/`rewriteAssetReferences` scan each *post's own* author.image/frontImage,
-not just the blog's default author (scanning only the latter left any post-level override's image
+not just the journal's default author (scanning only the latter left any post-level override's image
 -- an Actor-authored post, or a front image -- unreachable by the real fetch/content-address step
 entirely, so it stayed pointing at the GM's own Foundry server on the published site), and that a
 tombstoned (`unpublished: true`) post's images are skipped entirely rather than re-fetched and

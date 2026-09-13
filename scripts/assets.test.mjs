@@ -38,14 +38,14 @@ test("rewriteImageSrcs leaves unmapped src values untouched", () => {
 });
 
 test("collectAssetUrls gathers each post's own author portrait, front image, and <img> srcs, deduped", () => {
-  const sharedBlogAuthor = { image: "portraits/thoric.png" };
+  const sharedJournalAuthor = { image: "portraits/thoric.png" };
   const payload = {
-    blogs: [
+    journals: [
       {
-        author: sharedBlogAuthor,
+        author: sharedJournalAuthor,
         posts: [
-          { author: sharedBlogAuthor, frontImage: "", html: `<img src="map.png">` },
-          { author: sharedBlogAuthor, frontImage: "", html: `<img src="map.png"> <img src="handout.jpg">` },
+          { author: sharedJournalAuthor, frontImage: "", html: `<img src="map.png">` },
+          { author: sharedJournalAuthor, frontImage: "", html: `<img src="map.png"> <img src="handout.jpg">` },
         ],
       },
       { author: { image: null }, posts: [{ author: { image: null }, frontImage: "", html: "<p>no images</p>" }] },
@@ -63,7 +63,7 @@ test("collectAssetUrls skips a tombstoned (unpublished: true) post's images enti
   // rendered anywhere on the live site, so re-fetching/re-uploading its
   // images on every single publish forever was pure waste.
   const payload = {
-    blogs: [
+    journals: [
       {
         author: { image: "portraits/thoric.png" },
         posts: [
@@ -90,18 +90,18 @@ test("collectAssetUrls skips a tombstoned (unpublished: true) post's images enti
   );
 });
 
-test("collectAssetUrls finds an image reachable only through a post's own author/front-image override -- not just the blog's default author", () => {
+test("collectAssetUrls finds an image reachable only through a post's own author/front-image override -- not just the journal's default author", () => {
   // Regression test: a real bug where a post-level Actor-authored override
   // (or the post's own front image) was invisible to the real publish
   // pipeline entirely, because this used to only ever look at
-  // blog.author.image -- the blog's own default, a different object
+  // journal.author.image -- the journal's own default, a different object
   // entirely from a post's override. Reported live: an NPC-authored
   // post's portrait stayed pointing at the GM's own localhost Foundry
   // server on the published site instead of being fetched/rehosted.
   const payload = {
-    blogs: [
+    journals: [
       {
-        author: { image: "portraits/thoric.png" }, // the blog's own default -- irrelevant to this post
+        author: { image: "portraits/thoric.png" }, // the journal's own default -- irrelevant to this post
         posts: [
           {
             author: { image: "http://localhost:30000/systems/dnd5e/icons/svg/actors/npc.svg" },
@@ -124,7 +124,7 @@ test("collectAssetUrls finds an image reachable only through a post's own author
 
 test("rewriteAssetReferences rewrites each post's own author.image, frontImage, and post.html in place, leaves unmapped alone", () => {
   const payload = {
-    blogs: [
+    journals: [
       {
         author: { image: "portraits/thoric.png" },
         posts: [
@@ -148,12 +148,12 @@ test("rewriteAssetReferences rewrites each post's own author.image, frontImage, 
     ["map.png", "/assets/bbb.png"],
   ]);
   rewriteAssetReferences(payload, urlMap);
-  assert.equal(payload.blogs[0].posts[0].author.image, "/assets/aaa.png");
-  assert.equal(payload.blogs[0].posts[0].frontImage, "/assets/ccc.png");
-  assert.equal(payload.blogs[0].posts[0].html, `<img src="/assets/bbb.png">`);
-  assert.equal(payload.blogs[0].posts[1].author.image, "unmapped-author.png"); // left alone
-  assert.equal(payload.blogs[0].posts[1].frontImage, ""); // left alone
-  assert.equal(payload.blogs[0].posts[1].html, `<img src="unmapped.png">`); // left alone
+  assert.equal(payload.journals[0].posts[0].author.image, "/assets/aaa.png");
+  assert.equal(payload.journals[0].posts[0].frontImage, "/assets/ccc.png");
+  assert.equal(payload.journals[0].posts[0].html, `<img src="/assets/bbb.png">`);
+  assert.equal(payload.journals[0].posts[1].author.image, "unmapped-author.png"); // left alone
+  assert.equal(payload.journals[0].posts[1].frontImage, ""); // left alone
+  assert.equal(payload.journals[0].posts[1].html, `<img src="unmapped.png">`); // left alone
 });
 
 test("guessExtension prefers the URL's own extension, falls back to content-type", () => {
@@ -196,7 +196,7 @@ test("collectAssets fetches each unique url once (including an actor-sourced aut
   };
   try {
     const payload = {
-      blogs: [
+      journals: [
         {
           posts: [
             {

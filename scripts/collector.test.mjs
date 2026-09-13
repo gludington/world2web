@@ -1,6 +1,6 @@
 // Run with: node --test scripts/collector.test.mjs
 //
-// collectBlogData() only touches Foundry globals (game, CONST), so it's
+// collectJournalData() only touches Foundry globals (game, CONST), so it's
 // directly testable in plain Node by stubbing those before calling in --
 // this pattern is worth keeping across the other *.test.mjs files too.
 import { test } from "node:test";
@@ -32,9 +32,9 @@ function fakeFolder({ id, name, parent = null }) {
   return { id, name, folder: parent };
 }
 
-function fakeBlogEntry({ uuid, name, folder = null, ownership = {}, pages = [], config = {}, isOwner = false }) {
+function fakeJournalEntry({ uuid, name, folder = null, ownership = {}, pages = [], config = {}, isOwner = false }) {
   // published:true with no explicit publishedAt mirrors what
-  // openBlogConfigDialog's save handler actually does on a first-ever
+  // openJournalConfigDialog's save handler actually does on a first-ever
   // publish (stamps publishedAt at the same time) -- lets every existing
   // "published: true" test fixture stay honest against isPublishable()'s
   // sticky, publishedAt-gated semantics without touching each call site by
@@ -47,7 +47,7 @@ function fakeBlogEntry({ uuid, name, folder = null, ownership = {}, pages = [], 
     name,
     folder,
     ownership,
-    // Plain property, not a real Foundry getter -- collectBlogData's
+    // Plain property, not a real Foundry getter -- collectJournalData's
     // scopedToCaller filter just reads entry.isOwner directly (see its
     // own doc comment for why), so a test fixture only needs to set
     // whatever value that filter should see, not replicate how a real
@@ -96,8 +96,8 @@ async function withMockFoundry(
   }
 }
 
-test("collectBlogData includes site config (theme/siteName/blogsSegment/allowThemeOverride) so the ingest script can write it without a live game.settings", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("collectJournalData includes site config (theme/siteName/journalsSegment/allowThemeOverride) so the ingest script can write it without a live game.settings", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   await withMockFoundry(
     {
@@ -106,16 +106,16 @@ test("collectBlogData includes site config (theme/siteName/blogsSegment/allowThe
       settings: {
         siteTheme: "parchment",
         siteName: "The Ashwood Chronicle",
-        blogsSegment: "chronicles",
+        journalsSegment: "chronicles",
         allowThemeOverride: true,
       },
     },
     async () => {
-      const payload = await collectBlogData();
+      const payload = await collectJournalData();
       assert.deepEqual(payload.siteConfig, {
         theme: "parchment",
         siteName: "The Ashwood Chronicle",
-        blogsSegment: "chronicles",
+        journalsSegment: "chronicles",
         allowThemeOverride: true,
       });
     },
@@ -123,24 +123,24 @@ test("collectBlogData includes site config (theme/siteName/blogsSegment/allowThe
 });
 
 test("site config defaults to 'default' theme, 'World2Web' name, 'journals' segment, and allowThemeOverride: false when unset", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   await withMockFoundry({ journalEntries: [], users: [] }, async () => {
-    const payload = await collectBlogData();
+    const payload = await collectJournalData();
     assert.deepEqual(payload.siteConfig, {
       theme: "default",
       siteName: "World2Web",
-      blogsSegment: "journals",
+      journalsSegment: "journals",
       allowThemeOverride: false,
     });
   });
 });
 
 test("published pages become posts; drafts are excluded", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [
@@ -149,16 +149,16 @@ test("published pages become posts; drafts are excluded", async () => {
     ],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogCount, 1);
-    assert.equal(payload.blogs[0].postCount, 1);
-    assert.equal(payload.blogs[0].posts[0].title, "Published entry");
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journalCount, 1);
+    assert.equal(payload.journals[0].postCount, 1);
+    assert.equal(payload.journals[0].posts[0].title, "Published entry");
   });
 });
 
 test("a previously-published, now-unpublished page is still collected, tombstoned with unpublished: true", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   // Not fakePage() -- that helper can't express "published: false but
   // publishedAt is set" (its published:false branch always yields empty
@@ -171,17 +171,17 @@ test("a previously-published, now-unpublished page is still collected, tombstone
     flags: { [NS]: { published: false, publishedAt: 100, updatedAt: 200 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [tombstonedPage],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts.length, 1);
-    const post = payload.blogs[0].posts[0];
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts.length, 1);
+    const post = payload.journals[0].posts[0];
     assert.equal(post.title, "Retracted entry");
     assert.equal(post.unpublished, true);
     assert.equal(post.publishedAt, 100);
@@ -190,39 +190,39 @@ test("a previously-published, now-unpublished page is still collected, tombstone
 });
 
 test("a page that's never been published at all is excluded, not tombstoned", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [fakePage({ uuid: "Page.1", name: "Draft entry", published: false })],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts.length, 0);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts.length, 0);
   });
 });
 
 test("a currently-published page has unpublished: false", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [fakePage({ uuid: "Page.1", name: "Live entry", published: true, publishedAt: 1, updatedAt: 1 })],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].unpublished, false);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].unpublished, false);
   });
 });
 
 test("an image page is collected with its src rendered as an <img>", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const imagePage = {
     uuid: "Page.image",
@@ -233,25 +233,25 @@ test("an image page is collected with its src rendered as an <img>", async () =>
     flags: { [NS]: { published: true, publishedAt: 100, updatedAt: 100 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [imagePage],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts.length, 1);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts.length, 1);
     assert.equal(
-      payload.blogs[0].posts[0].html,
+      payload.journals[0].posts[0].html,
       `<img src="${resolved("worlds/test-world/assets/letter.png")}" alt="">`,
     );
   });
 });
 
 test("an image page with a caption is wrapped in <figure>/<figcaption>", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const imagePage = {
     uuid: "Page.image",
@@ -262,16 +262,16 @@ test("an image page with a caption is wrapped in <figure>/<figcaption>", async (
     flags: { [NS]: { published: true, publishedAt: 100, updatedAt: 100 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [imagePage],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    const html = payload.blogs[0].posts[0].html;
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    const html = payload.journals[0].posts[0].html;
     assert.equal(
       html,
       `<figure><img src="${resolved("worlds/test-world/assets/letter.png")}" alt="A wax-sealed letter, addressed to no one"><figcaption>A wax-sealed letter, addressed to no one</figcaption></figure>`,
@@ -280,10 +280,10 @@ test("an image page with a caption is wrapped in <figure>/<figcaption>", async (
 });
 
 test("an <img> pasted directly into a text page's body has its Foundry-relative src resolved to an absolute URL", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [
@@ -298,21 +298,21 @@ test("an <img> pasted directly into a text page's body has its Foundry-relative 
     ],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
     assert.equal(
-      payload.blogs[0].posts[0].html,
+      payload.journals[0].posts[0].html,
       `<p>Look:</p><img src="${resolved("systems/dnd5e/icons/svg/actors/character.svg")}">`,
     );
   });
 });
 
 test("an already-absolute <img src> (e.g. Forge-hosted module art) is left completely untouched", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const forgeUrl = "https://assets.forge-vtt.com/some-id/Tokens/felix.webp";
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [
@@ -327,34 +327,34 @@ test("an already-absolute <img src> (e.g. Forge-hosted module art) is left compl
     ],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].html, `<img src="${forgeUrl}">`);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].html, `<img src="${forgeUrl}">`);
   });
 });
 
 test("an already-absolute author image URL is left untouched, not mangled into a nested URL", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const npc = { name: "Old Man Willow", img: "https://assets.forge-vtt.com/some-id/willow.webp" };
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "The Grove's Journal",
     config: { published: true, authorActorUuid: "Actor.willow123" },
     pages: [],
   });
 
   await withMockFoundry(
-    { journalEntries: [blog], users: [], actorsByUuid: { "Actor.willow123": npc } },
+    { journalEntries: [journal], users: [], actorsByUuid: { "Actor.willow123": npc } },
     async () => {
-      const payload = await collectBlogData();
-      assert.equal(payload.blogs[0].author.image, "https://assets.forge-vtt.com/some-id/willow.webp");
+      const payload = await collectJournalData();
+      assert.equal(payload.journals[0].author.image, "https://assets.forge-vtt.com/some-id/willow.webp");
     },
   );
 });
 
 test("a pdf or video page is excluded entirely, even if flagged published (no publish path exists for these types)", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const pdfPage = {
     uuid: "Page.pdf",
@@ -371,16 +371,16 @@ test("a pdf or video page is excluded entirely, even if flagged published (no pu
     flags: { [NS]: { published: true, publishedAt: 100, updatedAt: 100 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     pages: [pdfPage, videoPage],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts.length, 0);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts.length, 0);
   });
 });
 
@@ -394,31 +394,31 @@ test("isPageTypePublishable: text and image are publishable, everything else isn
   assert.equal(isPageTypePublishable({ type: "some-system-custom-type" }), false);
 });
 
-test("only entries explicitly marked published are collected as blogs", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("only entries explicitly marked published are collected as journals", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
-  const published = fakeBlogEntry({ uuid: "JournalEntry.pub", name: "Published", config: { published: true }, pages: [] });
-  const unpublished = fakeBlogEntry({ uuid: "JournalEntry.unpub", name: "Not yet", config: { published: false }, pages: [] });
-  const unconfigured = fakeBlogEntry({ uuid: "JournalEntry.none", name: "Untouched", config: {}, pages: [] });
+  const published = fakeJournalEntry({ uuid: "JournalEntry.pub", name: "Published", config: { published: true }, pages: [] });
+  const unpublished = fakeJournalEntry({ uuid: "JournalEntry.unpub", name: "Not yet", config: { published: false }, pages: [] });
+  const unconfigured = fakeJournalEntry({ uuid: "JournalEntry.none", name: "Untouched", config: {}, pages: [] });
 
   await withMockFoundry({ journalEntries: [published, unpublished, unconfigured], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogCount, 1);
-    assert.equal(payload.blogs[0].uuid, "JournalEntry.pub");
+    const payload = await collectJournalData();
+    assert.equal(payload.journalCount, 1);
+    assert.equal(payload.journals[0].uuid, "JournalEntry.pub");
   });
 });
 
-test("collectBlogData({scopedToCaller: true}) only includes entries the current user owns", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("collectJournalData({scopedToCaller: true}) only includes entries the current user owns", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
-  const owned = fakeBlogEntry({
+  const owned = fakeJournalEntry({
     uuid: "JournalEntry.mine",
     name: "My Journal",
     config: { published: true },
     isOwner: true,
     pages: [],
   });
-  const notOwned = fakeBlogEntry({
+  const notOwned = fakeJournalEntry({
     uuid: "JournalEntry.theirs",
     name: "Someone Else's Journal",
     config: { published: true },
@@ -427,21 +427,21 @@ test("collectBlogData({scopedToCaller: true}) only includes entries the current 
   });
 
   await withMockFoundry({ journalEntries: [owned, notOwned], users: [] }, async () => {
-    const unscoped = await collectBlogData();
-    assert.equal(unscoped.blogCount, 2);
+    const unscoped = await collectJournalData();
+    assert.equal(unscoped.journalCount, 2);
 
-    const scoped = await collectBlogData({ scopedToCaller: true });
-    assert.equal(scoped.blogCount, 1);
-    assert.equal(scoped.blogs[0].uuid, "JournalEntry.mine");
+    const scoped = await collectJournalData({ scopedToCaller: true });
+    assert.equal(scoped.journalCount, 1);
+    assert.equal(scoped.journals[0].uuid, "JournalEntry.mine");
   });
 });
 
 test("an entry with published:true but no publishedAt at all is excluded (isPublishable is publishedAt-only, no legacy fallback)", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  // Not fakeBlogEntry() -- its published:true auto-stamps publishedAt,
+  // Not fakeJournalEntry() -- its published:true auto-stamps publishedAt,
   // which is exactly what this test needs to NOT have. This shape can't
-  // actually arise from openBlogConfigDialog's save handler (it always
+  // actually arise from openJournalConfigDialog's save handler (it always
   // stamps publishedAt in the same save that first sets published:true),
   // so this only documents the deliberate choice not to special-case it.
   const noPublishedAt = {
@@ -454,13 +454,13 @@ test("an entry with published:true but no publishedAt at all is excluded (isPubl
   };
 
   await withMockFoundry({ journalEntries: [noPublishedAt], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogCount, 0);
+    const payload = await collectJournalData();
+    assert.equal(payload.journalCount, 0);
   });
 });
 
 test("author resolves by default to the first non-GM user with Owner permission, using their character", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const gm = fakeUser({ id: "gmUser", isGM: true, name: "GM" });
   const player = fakeUser({
@@ -470,17 +470,17 @@ test("author resolves by default to the first non-GM user with Owner permission,
     character: { name: "Thoric", img: "portraits/thoric.png" },
   });
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     ownership: { default: 0, gmUser: 3, player1: 3 },
     pages: [fakePage({ uuid: "Page.1", name: "Post", published: true, publishedAt: 1, updatedAt: 1 })],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [gm, player] }, async () => {
-    const payload = await collectBlogData();
-    const author = payload.blogs[0].author;
+  await withMockFoundry({ journalEntries: [journal], users: [gm, player] }, async () => {
+    const payload = await collectJournalData();
+    const author = payload.journals[0].author;
     assert.equal(author.isGM, false);
     assert.equal(author.name, "Thoric");
     assert.equal(author.image, resolved("portraits/thoric.png"));
@@ -491,20 +491,20 @@ test("author resolves by default to the first non-GM user with Owner permission,
 });
 
 test("author falls back to Game Master when no non-GM owner exists", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const gm = fakeUser({ id: "gmUser", isGM: true, name: "GM" });
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "GM Session Log",
     config: { published: true },
     ownership: { default: 0, gmUser: 3 },
     pages: [fakePage({ uuid: "Page.1", name: "Post", published: true, publishedAt: 1, updatedAt: 1 })],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [gm] }, async () => {
-    const payload = await collectBlogData();
-    assert.deepEqual(payload.blogs[0].author, {
+  await withMockFoundry({ journalEntries: [journal], users: [gm] }, async () => {
+    const payload = await collectJournalData();
+    assert.deepEqual(payload.journals[0].author, {
       userId: null,
       name: "Game Master",
       image: null,
@@ -515,7 +515,7 @@ test("author falls back to Game Master when no non-GM owner exists", async () =>
 });
 
 test("an explicit manual author override replaces the computed default entirely, with no biography", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const player = fakeUser({
     id: "player1",
@@ -524,17 +524,17 @@ test("an explicit manual author override replaces the computed default entirely,
     character: { name: "Thoric", img: "portraits/thoric.png" },
   });
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true, authorName: "The Chronicler", authorImage: "art/chronicler.png" },
     ownership: { default: 0, player1: 3 },
     pages: [],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [player] }, async () => {
-    const payload = await collectBlogData();
-    assert.deepEqual(payload.blogs[0].author, {
+  await withMockFoundry({ journalEntries: [journal], users: [player] }, async () => {
+    const payload = await collectJournalData();
+    assert.deepEqual(payload.journals[0].author, {
       userId: null,
       name: "The Chronicler",
       image: resolved("art/chronicler.png"),
@@ -545,7 +545,7 @@ test("an explicit manual author override replaces the computed default entirely,
 });
 
 test("an explicit Actor override authors as that Actor, pulling name/image/biography from it", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const npc = {
     name: "Old Man Willow",
@@ -553,18 +553,18 @@ test("an explicit Actor override authors as that Actor, pulling name/image/biogr
     system: { details: { biography: { value: "<p>Keeper of the grove.</p>" } } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "The Grove's Journal",
     config: { published: true, authorActorUuid: "Actor.willow123" },
     pages: [],
   });
 
   await withMockFoundry(
-    { journalEntries: [blog], users: [], systemId: "dnd5e", actorsByUuid: { "Actor.willow123": npc } },
+    { journalEntries: [journal], users: [], systemId: "dnd5e", actorsByUuid: { "Actor.willow123": npc } },
     async () => {
-      const payload = await collectBlogData();
-      assert.deepEqual(payload.blogs[0].author, {
+      const payload = await collectJournalData();
+      assert.deepEqual(payload.journals[0].author, {
         userId: null,
         name: "Old Man Willow",
         image: resolved("actors/willow.png"),
@@ -576,11 +576,11 @@ test("an explicit Actor override authors as that Actor, pulling name/image/biogr
 });
 
 test("an Actor override wins outright over manual authorName/authorImage text overrides", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const npc = { name: "Old Man Willow", img: "actors/willow.png" };
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "The Grove's Journal",
     config: {
       published: true,
@@ -592,20 +592,20 @@ test("an Actor override wins outright over manual authorName/authorImage text ov
   });
 
   await withMockFoundry(
-    { journalEntries: [blog], users: [], actorsByUuid: { "Actor.willow123": npc } },
+    { journalEntries: [journal], users: [], actorsByUuid: { "Actor.willow123": npc } },
     async () => {
-      const payload = await collectBlogData();
-      assert.equal(payload.blogs[0].author.name, "Old Man Willow");
-      assert.equal(payload.blogs[0].author.image, resolved("actors/willow.png"));
+      const payload = await collectJournalData();
+      assert.equal(payload.journals[0].author.name, "Old Man Willow");
+      assert.equal(payload.journals[0].author.image, resolved("actors/willow.png"));
     },
   );
 });
 
 test("a stale/invalid authorActorUuid falls through to the next tier instead of erroring", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true, authorActorUuid: "Actor.deleted", authorName: "Fallback Name" },
     pages: [],
@@ -613,15 +613,15 @@ test("a stale/invalid authorActorUuid falls through to the next tier instead of 
 
   // actorsByUuid deliberately doesn't include "Actor.deleted" -- fromUuidSync
   // mock returns null, same as a real deleted/invalid Actor reference.
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].author.name, "Fallback Name");
-    assert.equal(payload.blogs[0].author.bio, "");
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].author.name, "Fallback Name");
+    assert.equal(payload.journals[0].author.bio, "");
   });
 });
 
 test("the default (non-override) owner's-character path also pulls a biography when one exists", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const player = fakeUser({
     id: "player1",
@@ -634,80 +634,80 @@ test("the default (non-override) owner's-character path also pulls a biography w
     },
   });
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     ownership: { default: 0, player1: 3 },
     pages: [],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [player], systemId: "dnd5e" }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].author.bio, "<p>A dwarf far from home.</p>");
+  await withMockFoundry({ journalEntries: [journal], users: [player], systemId: "dnd5e" }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].author.bio, "<p>A dwarf far from home.</p>");
   });
 });
 
 test("root defaults to the hierarchical folder path, root-first", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const root = fakeFolder({ id: "f1", name: "Campaign" });
   const child = fakeFolder({ id: "f2", name: "Arc 1", parent: root });
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     folder: child,
     config: { published: true },
     pages: [],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].root, "Campaign/Arc 1");
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].root, "Campaign/Arc 1");
   });
 });
 
 test("root is null when the entry has no folder and no override", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     folder: null,
     config: { published: true },
     pages: [],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].root, null);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].root, null);
   });
 });
 
 test("an explicit root override replaces the folder-derived default", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const folder = fakeFolder({ id: "f1", name: "Session Notes" });
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     folder,
     config: { published: true, root: "Side Quests" },
     pages: [],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].root, "Side Quests");
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].root, "Side Quests");
   });
 });
 
 test("tags default to empty and otherwise pass through, trimmed and filtered", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const untagged = fakeBlogEntry({ uuid: "JournalEntry.a", name: "A", config: { published: true }, pages: [] });
-  const tagged = fakeBlogEntry({
+  const untagged = fakeJournalEntry({ uuid: "JournalEntry.a", name: "A", config: { published: true }, pages: [] });
+  const tagged = fakeJournalEntry({
     uuid: "JournalEntry.b",
     name: "B",
     config: { published: true, tags: [" heist ", "waterdeep", "", "  "] },
@@ -715,15 +715,15 @@ test("tags default to empty and otherwise pass through, trimmed and filtered", a
   });
 
   await withMockFoundry({ journalEntries: [untagged, tagged], users: [] }, async () => {
-    const payload = await collectBlogData();
-    const byUuid = Object.fromEntries(payload.blogs.map((b) => [b.uuid, b]));
+    const payload = await collectJournalData();
+    const byUuid = Object.fromEntries(payload.journals.map((b) => [b.uuid, b]));
     assert.deepEqual(byUuid["JournalEntry.a"].tags, []);
     assert.deepEqual(byUuid["JournalEntry.b"].tags, ["heist", "waterdeep"]);
   });
 });
 
-test("unchecking a blog's own 'published' flag tombstones every one of its pages, even ones still individually marked published", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("unchecking a journal's own 'published' flag tombstones every one of its pages, even ones still individually marked published", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   const stillFlaggedPublished = fakePage({
     uuid: "Page.1",
@@ -735,8 +735,8 @@ test("unchecking a blog's own 'published' flag tombstones every one of its pages
 
   // The entry was published at some point (publishedAt is set, sticky) but
   // has since been turned off (published: false) -- this is exactly what
-  // unchecking "Publish this journal as a blog" produces.
-  const entry = fakeBlogEntry({
+  // unchecking "Publish this journal to the web" produces.
+  const entry = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "Talos Journal",
     config: { published: false, publishedAt: 100 },
@@ -744,20 +744,20 @@ test("unchecking a blog's own 'published' flag tombstones every one of its pages
   });
 
   await withMockFoundry({ journalEntries: [entry], users: [] }, async () => {
-    const payload = await collectBlogData();
+    const payload = await collectJournalData();
     // Collected -- not silently dropped, which would orphan the page's
     // already-live file on GitHub forever (no delete step exists).
-    assert.equal(payload.blogCount, 1);
-    assert.equal(payload.blogs[0].posts.length, 1);
+    assert.equal(payload.journalCount, 1);
+    assert.equal(payload.journals[0].posts.length, 1);
     // Tombstoned, despite the page's own flags still saying published:true.
-    assert.equal(payload.blogs[0].posts[0].unpublished, true);
+    assert.equal(payload.journals[0].posts[0].unpublished, true);
   });
 });
 
-test("a blog that's currently published collects its pages normally (not force-tombstoned)", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("a journal that's currently published collects its pages normally (not force-tombstoned)", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
-  const entry = fakeBlogEntry({
+  const entry = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "Talos Journal",
     config: { published: true },
@@ -765,15 +765,15 @@ test("a blog that's currently published collects its pages normally (not force-t
   });
 
   await withMockFoundry({ journalEntries: [entry], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].unpublished, false);
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].unpublished, false);
   });
 });
 
 test("an entry that was never published at all (no publishedAt ever stamped) is excluded entirely, same as before", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const entry = fakeBlogEntry({
+  const entry = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "Never touched",
     config: { published: false },
@@ -781,22 +781,22 @@ test("an entry that was never published at all (no publishedAt ever stamped) is 
   });
 
   await withMockFoundry({ journalEntries: [entry], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogCount, 0);
+    const payload = await collectJournalData();
+    assert.equal(payload.journalCount, 0);
   });
 });
 
 test("postOrder defaults to 'manual' and otherwise passes through an explicit 'newest' or 'oldest'", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const defaulted = fakeBlogEntry({ uuid: "JournalEntry.a", name: "A", config: { published: true }, pages: [] });
-  const newest = fakeBlogEntry({
+  const defaulted = fakeJournalEntry({ uuid: "JournalEntry.a", name: "A", config: { published: true }, pages: [] });
+  const newest = fakeJournalEntry({
     uuid: "JournalEntry.b",
     name: "B",
     config: { published: true, postOrder: "newest" },
     pages: [],
   });
-  const oldest = fakeBlogEntry({
+  const oldest = fakeJournalEntry({
     uuid: "JournalEntry.c",
     name: "C",
     config: { published: true, postOrder: "oldest" },
@@ -804,8 +804,8 @@ test("postOrder defaults to 'manual' and otherwise passes through an explicit 'n
   });
 
   await withMockFoundry({ journalEntries: [defaulted, newest, oldest], users: [] }, async () => {
-    const payload = await collectBlogData();
-    const byUuid = Object.fromEntries(payload.blogs.map((b) => [b.uuid, b]));
+    const payload = await collectJournalData();
+    const byUuid = Object.fromEntries(payload.journals.map((b) => [b.uuid, b]));
     assert.equal(byUuid["JournalEntry.a"].postOrder, "manual");
     assert.equal(byUuid["JournalEntry.b"].postOrder, "newest");
     assert.equal(byUuid["JournalEntry.c"].postOrder, "oldest");
@@ -813,44 +813,44 @@ test("postOrder defaults to 'manual' and otherwise passes through an explicit 'n
 });
 
 test("a post's sortIndex comes from Foundry's own page.sort, collected regardless of postOrder", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const page = fakePage({ uuid: "Page.1", name: "Session 1", published: true, publishedAt: 100, updatedAt: 100 });
   page.sort = 300000;
 
-  const blog = fakeBlogEntry({
+  const journal = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "A",
     config: { published: true },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].sortIndex, 300000);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].sortIndex, 300000);
   });
 });
 
 test("sortIndex defaults to 0 when a page has no sort field at all", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
+  const journal = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "A",
     config: { published: true },
     pages: [fakePage({ uuid: "Page.1", name: "Session 1", published: true, publishedAt: 100, updatedAt: 100 })],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].sortIndex, 0);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].sortIndex, 0);
   });
 });
 
 test("postOrder falls back to 'manual' for any unrecognized value", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const bogus = fakeBlogEntry({
+  const bogus = fakeJournalEntry({
     uuid: "JournalEntry.a",
     name: "A",
     config: { published: true, postOrder: "sideways" },
@@ -858,17 +858,17 @@ test("postOrder falls back to 'manual' for any unrecognized value", async () => 
   });
 
   await withMockFoundry({ journalEntries: [bogus], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].postOrder, "manual");
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].postOrder, "manual");
   });
 });
 
 test("posts are sorted chronologically by publishedAt", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
-    name: "Blog",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
+    name: "Journal",
     config: { published: true },
     pages: [
       fakePage({ uuid: "Page.later", name: "Later", published: true, publishedAt: 200, updatedAt: 200 }),
@@ -876,17 +876,17 @@ test("posts are sorted chronologically by publishedAt", async () => {
     ],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
     assert.deepEqual(
-      payload.blogs[0].posts.map((p) => p.title),
+      payload.journals[0].posts.map((p) => p.title),
       ["Earlier", "Later"],
     );
   });
 });
 
-test("a post with no override inherits its blog's author and tags unchanged", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("a post with no override inherits its journal's author and tags unchanged", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   const player = fakeUser({
     id: "player1",
@@ -903,25 +903,25 @@ test("a post with no override inherits its blog's author and tags unchanged", as
     flags: { [NS]: { published: true, publishedAt: 1, updatedAt: 1 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true, tags: ["campaign"] },
     ownership: { default: 0, player1: 3 },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [player] }, async () => {
-    const payload = await collectBlogData();
-    const post = payload.blogs[0].posts[0];
+  await withMockFoundry({ journalEntries: [journal], users: [player] }, async () => {
+    const payload = await collectJournalData();
+    const post = payload.journals[0].posts[0];
     assert.equal(post.author.name, "Thoric");
     assert.equal(post.author.image, resolved("portraits/thoric.png"));
     assert.deepEqual(post.tags, ["campaign"]);
   });
 });
 
-test("a post with its own Actor-UUID author override replaces the blog's author for that post only", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("a post with its own Actor-UUID author override replaces the journal's author for that post only", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   const player = fakeUser({
     id: "player1",
@@ -946,8 +946,8 @@ test("a post with its own Actor-UUID author override replaces the blog's author 
   };
 
   const npc = { name: "Old Man Willow", img: "actors/willow.png" };
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Thoric's Journal",
     config: { published: true },
     ownership: { default: 0, player1: 3 },
@@ -955,10 +955,10 @@ test("a post with its own Actor-UUID author override replaces the blog's author 
   });
 
   await withMockFoundry(
-    { journalEntries: [blog], users: [player], actorsByUuid: { "Actor.willow123": npc } },
+    { journalEntries: [journal], users: [player], actorsByUuid: { "Actor.willow123": npc } },
     async () => {
-      const payload = await collectBlogData();
-      const byUuid = Object.fromEntries(payload.blogs[0].posts.map((p) => [p.uuid, p]));
+      const payload = await collectJournalData();
+      const byUuid = Object.fromEntries(payload.journals[0].posts.map((p) => [p.uuid, p]));
       assert.equal(byUuid["Page.1"].author.name, "Old Man Willow");
       assert.equal(byUuid["Page.2"].author.name, "Thoric");
     },
@@ -966,7 +966,7 @@ test("a post with its own Actor-UUID author override replaces the blog's author 
 });
 
 test("a post with its own manual authorName/authorImage override uses that, with no biography", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const page = {
     uuid: "Page.1",
@@ -984,24 +984,24 @@ test("a post with its own manual authorName/authorImage override uses that, with
     },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    const author = payload.blogs[0].posts[0].author;
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    const author = payload.journals[0].posts[0].author;
     assert.equal(author.name, "Guest Chronicler");
     assert.equal(author.image, resolved("art/guest.png"));
     assert.equal(author.bio, "");
   });
 });
 
-test("a post's own tags fully replace the blog's tags, not merge with them", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("a post's own tags fully replace the journal's tags, not merge with them", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   const page = {
     uuid: "Page.1",
@@ -1011,21 +1011,21 @@ test("a post's own tags fully replace the blog's tags, not merge with them", asy
     flags: { [NS]: { published: true, publishedAt: 1, updatedAt: 1, tags: ["spooky", "npc"] } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true, tags: ["campaign"] },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.deepEqual(payload.blogs[0].posts[0].tags, ["spooky", "npc"]);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.deepEqual(payload.journals[0].posts[0].tags, ["spooky", "npc"]);
   });
 });
 
-test("a post with a blank/empty tags override still inherits the blog's tags, rather than having none", async () => {
-  const { collectBlogData } = await import("./collector.js");
+test("a post with a blank/empty tags override still inherits the journal's tags, rather than having none", async () => {
+  const { collectJournalData } = await import("./collector.js");
 
   const page = {
     uuid: "Page.1",
@@ -1035,21 +1035,21 @@ test("a post with a blank/empty tags override still inherits the blog's tags, ra
     flags: { [NS]: { published: true, publishedAt: 1, updatedAt: 1, tags: ["  ", ""] } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true, tags: ["campaign"] },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.deepEqual(payload.blogs[0].posts[0].tags, ["campaign"]);
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.deepEqual(payload.journals[0].posts[0].tags, ["campaign"]);
   });
 });
 
 test("a post's frontImage is '' when unset", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const page = {
     uuid: "Page.1",
@@ -1059,21 +1059,21 @@ test("a post's frontImage is '' when unset", async () => {
     flags: { [NS]: { published: true, publishedAt: 1, updatedAt: 1 } },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true },
     pages: [page],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    assert.equal(payload.blogs[0].posts[0].frontImage, "");
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].frontImage, "");
   });
 });
 
 test("a post's frontImage resolves a Foundry-relative path to an absolute URL, and leaves an already-absolute one untouched", async () => {
-  const { collectBlogData } = await import("./collector.js");
+  const { collectJournalData } = await import("./collector.js");
 
   const relativePage = {
     uuid: "Page.1",
@@ -1097,16 +1097,16 @@ test("a post's frontImage resolves a Foundry-relative path to an absolute URL, a
     },
   };
 
-  const blog = fakeBlogEntry({
-    uuid: "JournalEntry.blogA",
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
     name: "Journal",
     config: { published: true },
     pages: [relativePage, absolutePage],
   });
 
-  await withMockFoundry({ journalEntries: [blog], users: [] }, async () => {
-    const payload = await collectBlogData();
-    const byUuid = Object.fromEntries(payload.blogs[0].posts.map((p) => [p.uuid, p]));
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    const byUuid = Object.fromEntries(payload.journals[0].posts.map((p) => [p.uuid, p]));
     assert.equal(byUuid["Page.1"].frontImage, resolved("worlds/test-world/assets/cover.png"));
     assert.equal(byUuid["Page.2"].frontImage, "https://assets.forge-vtt.com/some-id/cover.webp");
   });

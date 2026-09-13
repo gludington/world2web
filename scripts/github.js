@@ -113,7 +113,7 @@ const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
  * it's all already sitting right there.
  *
  * expectedUuid guards against a real race: a brand-new page published
- * with the same title (same blog/root) computes the identical slug/path
+ * with the same title (same journal/root) computes the identical slug/path
  * as whatever used to live there, and path disambiguation only ever
  * checks the *current* payload, never GitHub's history -- so if a
  * deletion and a same-slug republish land in the same publish run,

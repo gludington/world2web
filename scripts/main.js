@@ -1,10 +1,10 @@
 import {
-  collectBlogData,
-  downloadBlogData,
+  collectJournalData,
+  downloadJournalData,
   isPublishable,
   isPageTypePublishable,
   resolveDefaultAuthor,
-  resolveBlogAuthor,
+  resolveJournalAuthor,
   resolveDefaultRoot,
 } from "./collector.js";
 import { renderPayloadToFiles, buildSiteConfigFile } from "./render.js";
@@ -72,9 +72,9 @@ Hooks.once("init", () => {
 
   // Off by default: everything stays exactly as it's always been (GM-only)
   // until a GM deliberately opts in. When on, a player who owns a journal
-  // entry (Foundry's own Owner permission level) gets that entry's Blog
+  // entry (Foundry's own Owner permission level) gets that entry's Journal
   // Settings/Post Settings/publish controls too, and their own "Publish to
-  // Web" click only publishes blogs *they* own -- see the "Player
+  // Web" click only publishes journals *they* own -- see the "Player
   // self-publish" section further down this file. Worth knowing before
   // enabling: a player's own browser needs to read the GitHub token
   // setting to publish at all, and Foundry's game.settings.get() has no
@@ -145,7 +145,7 @@ Hooks.once("init", () => {
   // time, for every post -- the dominant cost in a real publish taking
   // 9+ minutes. Recording each file's hash after it's confirmed correct
   // lets pushFiles skip that GET entirely next time when nothing about a
-  // post actually changed, which -- for a stable blog with hundreds of
+  // post actually changed, which -- for a stable journal with hundreds of
   // untouched posts -- is most of them, most publishes.
   game.settings.register(MODULE_ID, "contentHashes", {
     scope: "world",
@@ -161,7 +161,7 @@ Hooks.once("init", () => {
   // site template, *then* come back and fill in the owner/repo/token it
   // produced. New in v0.20.2, untested against a live Foundry instance --
   // ApplicationV2's exact render() contract is taken on faith here the same
-  // way openBlogConfigDialog's DialogV2 usage originally was (see that
+  // way openJournalConfigDialog's DialogV2 usage originally was (see that
   // function's own doc comment).
   //
   // Declared here, inside this hook, rather than at module top level:
@@ -256,9 +256,9 @@ Hooks.once("init", () => {
     default: "World2Web",
   });
 
-  game.settings.register(MODULE_ID, "blogsSegment", {
-    name: "WORLD2WEB.Settings.BlogsSegment.Name",
-    hint: "WORLD2WEB.Settings.BlogsSegment.Hint",
+  game.settings.register(MODULE_ID, "journalsSegment", {
+    name: "WORLD2WEB.Settings.JournalsSegment.Name",
+    hint: "WORLD2WEB.Settings.JournalsSegment.Hint",
     scope: "world",
     config: true,
     type: String,
@@ -278,7 +278,7 @@ function getGithubConfig() {
 // --- Deleted pages/entries -------------------------------------------------
 //
 // Unpublishing via the checkbox/toggle works because the document is still
-// there for collectBlogData() to visit and see a flag flip -- see
+// there for collectJournalData() to visit and see a flag flip -- see
 // collector.js's own tombstone handling. Deleting a page (or a whole
 // journal entry, which takes all its pages with it) removes the document
 // from Foundry's collections entirely, so the collector has nothing left
@@ -355,9 +355,9 @@ async function retractPendingDeletions(config, { scopedToCaller = false } = {}) 
 async function recordPublishedPaths(payload, worldSlug) {
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
   const next = { ...paths };
-  for (const blog of payload.blogs ?? []) {
-    for (const post of blog.posts ?? []) {
-      next[post.uuid] = `content/worlds/${worldSlug}/blogs/${blog._slug}/${post._slug}.md`;
+  for (const journal of payload.journals ?? []) {
+    for (const post of journal.posts ?? []) {
+      next[post.uuid] = `content/worlds/${worldSlug}/journals/${journal._slug}/${post._slug}.md`;
     }
   }
   await game.settings.set(MODULE_ID, "publishedPaths", next);
@@ -390,7 +390,7 @@ async function trackDeletedPage(page, entry) {
 /** Collect + fetch/content-address images + render + push directly to
  * GitHub -- no local script, no download. Safe to call repeatedly:
  * putFile/putBinaryAssetIfMissing (github.js) skip anything that hasn't
- * actually changed, so re-publishing everyone's blogs just to publish your
+ * actually changed, so re-publishing everyone's journals just to publish your
  * own new post doesn't spam the repo history.
  *
  * scopedToCaller (a player's own "Publish to Web," see "Player
@@ -409,8 +409,8 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
     return;
   }
 
-  const payload = collectBlogData({ scopedToCaller });
-  if (payload.blogCount === 0) {
+  const payload = collectJournalData({ scopedToCaller });
+  if (payload.journalCount === 0) {
     ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
     return;
   }
@@ -436,9 +436,9 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   const { worldSlug, files } = renderPayloadToFiles(payload);
   const theme = game.settings.get(MODULE_ID, "siteTheme");
   const siteName = game.settings.get(MODULE_ID, "siteName");
-  const blogsSegment = game.settings.get(MODULE_ID, "blogsSegment");
+  const journalsSegment = game.settings.get(MODULE_ID, "journalsSegment");
   const allowThemeOverride = game.settings.get(MODULE_ID, "allowThemeOverride");
-  files.push(buildSiteConfigFile({ theme, siteName, blogsSegment, allowThemeOverride }));
+  files.push(buildSiteConfigFile({ theme, siteName, journalsSegment, allowThemeOverride }));
 
   const { pushed, hashes } = await pushFiles({
     owner: config.owner,
@@ -494,7 +494,7 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
 Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   // Exposed for console use: game.modules.get("world2web").api.collect()
-  mod.api = { collect: collectBlogData, download: downloadBlogData, publish: publishToGitHub };
+  mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
 });
 
 /** Builds (but doesn't insert) the Dev Sync button -- shared by the initial
@@ -515,13 +515,13 @@ function createDevSyncButton() {
     devSyncButton.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> ${t("Button.Syncing")}`;
     devSyncButton.style.color = COLOR_IN_PROGRESS;
     try {
-      const payload = downloadBlogData();
+      const payload = downloadJournalData();
       // Counts as a sync for coloring purposes too -- from the GM's
       // perspective, having just pulled the current state out of Foundry
       // (even just to a local JSON file) is the same "I've taken care of
       // this" signal Publish to Web gives, not a separate concept.
       await markSynced();
-      ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.Collected", { count: payload.blogCount })}`);
+      ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.Collected", { count: payload.journalCount })}`);
     } finally {
       devSyncButton.innerHTML = restoreHtml;
       devSyncButton.disabled = false;
@@ -641,10 +641,10 @@ function escapeHtml(str) {
 // Off by default (allowPlayerSelfPublish, registered above) -- everything
 // stays exactly GM-only, unchanged, until a GM deliberately opts in. Once
 // on, a player who owns a journal entry (Foundry's own Owner permission
-// level) gets that entry's Blog Settings/Post Settings/publish controls
-// too (canControlBlog(), used everywhere those get injected), and their
+// level) gets that entry's Publishing Settings/Post Settings/publish controls
+// too (canControlJournal(), used everywhere those get injected), and their
 // own "Publish to Web" click is scoped to just what they own: only their
-// own owned blogs get collected (collector.js's collectBlogData()'s own
+// own owned journals get collected (collector.js's collectJournalData()'s own
 // scopedToCaller), and only their own owned deletions get retracted
 // (retractPendingDeletions()'s own scopedToCaller, checked against the
 // ownership snapshot trackDeletedPage() captures at delete time -- the
@@ -653,13 +653,13 @@ function escapeHtml(str) {
 // downloading the raw collected payload isn't something this feature was
 // ever meant to grant a self-publishing player.
 
-/** Whether the current user can see/use this entry's blog controls
- * (Blog Settings, Post Settings, publish icons) -- the GM always can;
+/** Whether the current user can see/use this entry's journal controls
+ * (Publishing Settings, Post Settings, publish icons) -- the GM always can;
  * a player can too, but only for an entry they actually own
  * (Foundry's own `isOwner` getter, always correct for whichever
  * client is asking), and only once a GM has opted into that at all via
  * the allowPlayerSelfPublish setting. */
-function canControlBlog(entry) {
+function canControlJournal(entry) {
   if (game.user.isGM) return true;
   if (!game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) return false;
   return !!entry?.isOwner;
@@ -716,7 +716,7 @@ function buildDeployUrl(action, repoName) {
 function buildGithubTokenUrl(owner) {
   const params = new URLSearchParams({
     name: "World2Web",
-    description: "World2Web -- publishes to one campaign-blog repo",
+    description: "World2Web -- publishes to one campaign-site repo",
     contents: "write",
   });
   if (owner) params.set("target_name", owner);
@@ -757,7 +757,7 @@ async function openDeployStep1ChooseHost(alreadyConfigured, owner, repo) {
     ${warning}
     <div class="form-group">
       <label>${t("Dialog.DeploySiteRepoNameLabel")}</label>
-      <input type="text" name="repoName" value="${escapeHtml(repo || "my-campaign-blog")}">
+      <input type="text" name="repoName" value="${escapeHtml(repo || "my-campaign-site")}">
       <p class="hint">${t("Dialog.DeploySiteRepoNameHint")}</p>
     </div>
     <p><strong>${t("Dialog.DeploySiteDeployToLabel")}</strong></p>
@@ -768,7 +768,7 @@ async function openDeployStep1ChooseHost(alreadyConfigured, owner, repo) {
   // obvious choice to fire on a stray Enter keypress the way a single
   // "Deploy" button had -- Cancel is the only safe default now, in both
   // cases. Each deploy button's own callback returns both which host it
-  // is and the typed repo name (matching openBlogConfigDialog's
+  // is and the typed repo name (matching openJournalConfigDialog's
   // established pattern of reading button.form.elements directly), so
   // whichever one gets clicked still carries the name forward.
   const buttonFor = (action, labelKey) => ({
@@ -841,7 +841,7 @@ async function openDeployStep2CreateToken(owner, repoName) {
 // else and retype them." Pre-filled with whatever's already configured
 // (all blank on a first-ever setup), so re-running this wizard to update
 // one value doesn't require retyping the other two. Form values are read
-// directly off the DOM by name, same reasoning as openBlogConfigDialog's
+// directly off the DOM by name, same reasoning as openJournalConfigDialog's
 // own doc comment (sidesteps FormDataExtended version drift).
 async function openDeployStep3SaveSettings(defaults) {
   const content = `
@@ -925,14 +925,14 @@ async function openDeploySiteDialog() {
 }
 
 // Entry-level publishing config, edited via a dialog opened from a header
-// button (injectBlogConfigButton). Unlike the per-page publish button below
+// button (injectJournalConfigButton). Unlike the per-page publish button below
 // (verified live, see README), this dialog is new and untested against a
 // real Foundry instance -- DialogV2 (foundry.applications.api.DialogV2) is
 // the standard modern (v12+) dialog API, but its exact button-callback
 // signature is taken on faith here rather than confirmed live. Form values
 // are read directly off the DOM form elements by name rather than via
 // Foundry's FormDataExtended, to sidestep any version drift in that class.
-async function openBlogConfigDialog(entry) {
+async function openJournalConfigDialog(entry) {
   const config = entry.flags?.[MODULE_ID] ?? {};
   const defaultAuthor = resolveDefaultAuthor(entry);
   const defaultRoot = resolveDefaultRoot(entry);
@@ -1029,7 +1029,7 @@ async function openBlogConfigDialog(entry) {
   // Sticky, stamped once on first-ever publish and never cleared after --
   // omitted (not set to false/undefined) once already set, so Foundry's
   // flag-merge behavior leaves the existing value alone. See collector.js's
-  // isPublishable()/collectBlog() for why the collector needs to keep
+  // isPublishable()/collectJournal() for why the collector needs to keep
   // visiting this entry even after `published` is later turned back off.
   if (result.published && !config.publishedAt) {
     flagsUpdate.publishedAt = Date.now();
@@ -1037,7 +1037,7 @@ async function openBlogConfigDialog(entry) {
 
   await entry.update({ flags: { [MODULE_ID]: flagsUpdate } });
 
-  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BlogSettingsSaved", { name: entry.name })}`);
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.PublishingSettingsSaved", { name: entry.name })}`);
 }
 
 /** Gear-icon header button, entry sheets only (not the popped-out page
@@ -1046,21 +1046,21 @@ async function openBlogConfigDialog(entry) {
  * allowPlayerSelfPublish is on -- can turn publishing *on* from an
  * unpublished entry, unlike the per-page publish button which only makes
  * sense once the entry itself is publishable. */
-function injectBlogConfigButton(app, header) {
+function injectJournalConfigButton(app, header) {
   const doc = app?.document ?? app?.object;
   if (doc?.documentName !== "JournalEntry") return;
-  if (!canControlBlog(doc)) return;
+  if (!canControlJournal(doc)) return;
 
-  header.querySelector(".world2web-blog-config-button")?.remove();
+  header.querySelector(".world2web-journal-config-button")?.remove();
 
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "header-control icon fa-solid fa-gear world2web-blog-config-button";
-  button.dataset.tooltip = t("Tooltip.BlogSettings");
-  button.setAttribute("aria-label", t("Aria.BlogSettings"));
+  button.className = "header-control icon fa-solid fa-gear world2web-journal-config-button";
+  button.dataset.tooltip = t("Tooltip.PublishingSettings");
+  button.setAttribute("aria-label", t("Aria.PublishingSettings"));
   button.addEventListener("click", async (event) => {
     event.preventDefault();
-    await openBlogConfigDialog(doc);
+    await openJournalConfigDialog(doc);
   });
 
   const closeButton = header.querySelector('[data-action="close"]');
@@ -1068,18 +1068,18 @@ function injectBlogConfigButton(app, header) {
   else header.appendChild(button);
 }
 
-/** Per-post config, mirroring the blog-level dialog above but scoped to a
+/** Per-post config, mirroring the journal-level dialog above but scoped to a
  * single page's own flags -- author/tags/front-image overrides only (no
  * "published" checkbox: that's the separate per-page publish control; no
- * root/postOrder: those stay blog-level-only concepts). Any field left
- * blank falls back to the blog's own resolved value, the same
+ * root/postOrder: those stay journal-level-only concepts). Any field left
+ * blank falls back to the journal's own resolved value, the same
  * "blank = inherit" convention every other override in this module
  * already uses -- see collector.js's resolvePostAuthor()/
- * resolvePostTags(). Front image has no blog-level equivalent to inherit
+ * resolvePostTags(). Front image has no journal-level equivalent to inherit
  * from at all (resolvePostFrontImage()). */
 async function openPostConfigDialog(page) {
   const config = page.flags?.[MODULE_ID] ?? {};
-  const blogAuthor = resolveBlogAuthor(page.parent);
+  const journalAuthor = resolveJournalAuthor(page.parent);
 
   const content = `
     <fieldset>
@@ -1091,14 +1091,14 @@ async function openPostConfigDialog(page) {
       <div class="form-group">
         <label>${t("Dialog.AuthorNameLabel")}</label>
         <input type="text" name="authorName" value="${escapeHtml(config.authorName ?? "")}"
-               placeholder="${escapeHtml(t("Dialog.DefaultPlaceholder", { value: blogAuthor.name }))}">
+               placeholder="${escapeHtml(t("Dialog.DefaultPlaceholder", { value: journalAuthor.name }))}">
         <p class="hint">${t("Dialog.PostAuthorNameHint")}</p>
       </div>
       <div class="form-group">
         <label>${t("Dialog.AuthorImageLabel")}</label>
         <input type="text" name="authorImage" value="${escapeHtml(config.authorImage ?? "")}"
                placeholder="${escapeHtml(
-                 t("Dialog.DefaultPlaceholder", { value: blogAuthor.image ?? t("Dialog.None") }),
+                 t("Dialog.DefaultPlaceholder", { value: journalAuthor.image ?? t("Dialog.None") }),
                )}">
         <p class="hint">${t("Dialog.PostAuthorImageHint")}</p>
       </div>
@@ -1171,7 +1171,7 @@ async function openPostConfigDialog(page) {
 
 // --- Drag an Actor onto either dialog's "Author Actor override" field -----
 //
-// Both openBlogConfigDialog() and openPostConfigDialog() render a plain
+// Both openJournalConfigDialog() and openPostConfigDialog() render a plain
 // <input name="authorActorUuid">, meant to be filled in either by typing a
 // UUID directly or by dragging an Actor onto it. Delegated on `document`
 // rather than attached per-dialog-render: DialogV2.wait()'s `content` is a
@@ -1399,7 +1399,7 @@ function syncButtonColor(lastSyncAtOverride) {
       anyTouched = true;
       if (isPagePending(page, lastSyncAtOverride)) {
         // Deliberately left in as a standing diagnostic, not a one-off
-        // debug line: with many blogs/pages, "why is this amber" isn't
+        // debug line: with many journals/pages, "why is this amber" isn't
         // obvious at a glance, so this names the exact page/entry and the
         // data behind the decision every time.
         console.log(`${MODULE_ID} | sync buttons amber because of "${page.name}" in "${entry.name}"`, {
@@ -1450,7 +1450,7 @@ async function markSynced() {
  * whole entry when it only ever affected whichever page was shown. */
 function injectPublishButton(app, header, lastSyncAtOverride) {
   const page = getCurrentPage(app);
-  if (!canControlBlog(page?.parent)) return;
+  if (!canControlJournal(page?.parent)) return;
 
   header.querySelector(".world2web-publish-button")?.remove(); // refresh state on every render
   header.querySelector(".world2web-post-config-button")?.remove();
@@ -1524,7 +1524,7 @@ function injectPublishButton(app, header, lastSyncAtOverride) {
  * already conveys the state the dot used to (checkmark vs. upload, plus
  * the same tooltip the header button used to show). */
 function injectPagePublishButtons(root, entry, lastSyncAtOverride) {
-  if (!canControlBlog(entry)) return;
+  if (!canControlJournal(entry)) return;
 
   for (const page of entry.pages.contents) {
     const titleEl = root.querySelector(`[data-page-id="${page.id}"] .page-title`);
@@ -1623,7 +1623,7 @@ function refreshIndicators(app, htmlEl, lastSyncAtOverride) {
   // The config button (turns publishing on/off) is entry-wide and always
   // shown; the publish control(s) only make sense once the entry itself
   // has been marked published.
-  injectBlogConfigButton(app, header);
+  injectJournalConfigButton(app, header);
   if (isPublishable(entry)) {
     const doc = app?.document ?? app?.object;
     if (doc?.documentName === "JournalEntry") {
@@ -1665,7 +1665,7 @@ for (const hookName of [
     // Cheap top-level bail matching today's exact behavior when
     // allowPlayerSelfPublish is off (its default); when it's on, this lets
     // a non-GM through so refreshIndicators()'s own per-entry
-    // canControlBlog() checks can decide entry by entry.
+    // canControlJournal() checks can decide entry by entry.
     if (!game.user.isGM && !game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) return;
     console.log(`${MODULE_ID} | ${hookName} fired for`, app?.document?.name ?? app?.object?.name);
 
@@ -1693,7 +1693,7 @@ Hooks.on("updateJournalEntryPage", (page) => {
   }
 });
 
-// Same idea, for the entry's own flags -- saving the blog config dialog
+// Same idea, for the entry's own flags -- saving the journal config dialog
 // updates the entry document, which re-renders its own open sheet
 // automatically, but a popped-out page editor (a separate app instance)
 // needs an explicit nudge to pick up the newly (un)published state.
