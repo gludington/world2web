@@ -2,7 +2,7 @@
   "id": "world2web",
   "title": "World2Web",
   "description": "Publishes journal entries from Foundry to a static site. Any journal entry can be marked as publishable (author/root-path/tags configurable per entry, gear-icon dialog); individual pages are posts, published explicitly via a per-page publish button. 'Publish to Web' pushes directly to GitHub; an optional 'Enable Dev Mode' setting adds a 'Dev Sync' button that downloads the collected payload as JSON for local inspection instead.",
-  "version": "0.20.5",
+  "version": "0.20.6",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
