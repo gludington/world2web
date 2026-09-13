@@ -1,0 +1,115 @@
+name: Release
+
+# Gated on version, not on every push: a release is only cut when
+# module.json's own "version" field doesn't already have a matching
+# release/tag. A doc fix or comment tweak on main just no-ops here instead
+# of spamming out a pointless release -- bump "version" in the same push
+# (or an earlier one) when you actually want a new one.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # No dependencies to install -- scripts/*.test.mjs run on Node's
+      # built-in test runner alone. A release with failing tests never
+      # gets created.
+      - name: Run tests
+        run: npm test
+
+      - name: Read version from module.json
+        id: version
+        run: echo "value=$(jq -r .version module.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Check whether this version already has a release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.version.outputs.value }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Staged into release/ so each file's own basename is exactly what
+      # gh release create uploads it as -- gh names an asset after the
+      # basename of the path you give it, directories stripped, with no
+      # separate rename-on-upload step (confirmed against real behavior:
+      # this exact class of bug -- a version-suffixed local filename
+      # becoming the asset's actual name -- shipped in a release once
+      # already; see this repo's history). release/module.json here is
+      # already named correctly, so it's passed straight to gh below, no
+      # extra rename step needed.
+      #
+      # "download" is rewritten to this run's own version/repo, computed
+      # here rather than trusting whatever's hand-typed in the committed
+      # file -- the same reasoning as the filename fix above. The
+      # committed module.json's own "download" field is only ever a
+      # template from here on; the one actually shipped in the release
+      # (both as its own asset and inside module.zip) is always freshly
+      # computed and correct.
+      - name: Build release manifest and zip
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.value }}"
+          repo="${{ github.repository }}"
+
+          mkdir -p release/lang release/scripts
+          jq --arg dl "https://github.com/${repo}/releases/download/v${version}/module.zip" \
+             '.download = $dl' module.json > release/module.json
+          cp README.md release/README.md
+          cp lang/en.json release/lang/en.json
+          cp scripts/*.js release/scripts/
+
+          ( cd release && zip -r ../module.zip . )
+
+      - name: Create GitHub release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          gh release create "v${version}" \
+            release/module.json module.zip \
+            --title "v${version}" \
+            --generate-notes
+
+      # The public releases/download/<tag>/<asset> URL has a brief CDN
+      # propagation delay after upload (observed live, resolved within
+      # ~10s) -- confirm the actual manifest and download URLs Foundry
+      # will hit both resolve before calling this run successful, rather
+      # than trusting gh's own upload response.
+      - name: Verify the public manifest and download URLs
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          base="https://github.com/${{ github.repository }}/releases/download/v${version}"
+          for i in 1 2 3 4 5 6; do
+            manifest_code=$(curl -s -o /tmp/manifest.json -w "%{http_code}" -L "${base}/module.json")
+            if [ "$manifest_code" = "200" ]; then break; fi
+            sleep 5
+          done
+          test "$manifest_code" = "200" || { echo "manifest never resolved (last: $manifest_code)"; exit 1; }
+
+          download_url=$(jq -r .download /tmp/manifest.json)
+          for i in 1 2 3 4 5 6; do
+            download_code=$(curl -s -o /dev/null -w "%{http_code}" -L "$download_url")
+            if [ "$download_code" = "200" ]; then break; fi
+            sleep 5
+          done
+          test "$download_code" = "200" || { echo "download URL never resolved (last: $download_code): $download_url"; exit 1; }
+
+          echo "Manifest and download URL both verified live."
