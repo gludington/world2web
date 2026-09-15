@@ -1,15 +1,19 @@
 /**
- * Pure transform: a collectJournalData() payload -> a flat list of
- * {path, content} markdown files, matching the content/worlds/... layout
- * scripts/ingest.js (site-template repo) writes locally. No filesystem, no
- * network -- deliberately duplicated from that script's equivalent logic
- * rather than shared across a repo boundary: Foundry modules serve only
- * files inside their own folder, so a shared module living outside
- * foundry-module/ wouldn't resolve at runtime without adding a build step,
- * which this project has otherwise avoided throughout. Keep the two in
- * sync by hand if the file-naming/frontmatter shape ever changes.
+ * Pure transform: a `collectJournalData()` payload (see collector.js) -> a flat list of
+ * `{path, content}` markdown files, matching the `content/worlds/...` layout the site-template
+ * repo's `scripts/ingest.js` writes locally. No filesystem, no network -- deliberately duplicated
+ * from that script's equivalent logic rather than shared across a repo boundary: Foundry modules
+ * serve only files inside their own folder, so a shared module living outside this repo wouldn't
+ * resolve at runtime without adding a build step, which this project has otherwise avoided
+ * throughout. Keep the two in sync by hand if the file-naming/frontmatter shape ever changes.
  */
 
+/**
+ * @param {string} [str] The raw string to slugify. `null`/`undefined` are treated as `""`.
+ * @returns {string} A URL-safe slug: lowercased, accents stripped, non-alphanumeric runs collapsed
+ *   to a single `-`, leading/trailing `-` trimmed. Never `null`/`undefined`/`""` -- `"untitled"` if
+ *   `str` had no slug-able characters at all.
+ */
 export function slugify(str) {
   const slug = String(str ?? "")
     .normalize("NFKD")
@@ -21,10 +25,16 @@ export function slugify(str) {
   return slug || "untitled";
 }
 
-/** Slugifies a "/"-delimited path (a journal's root override or its default
- * folder-hierarchy path), segment by segment -- "Arc 1/Session Notes" ->
- * "arc-1/session-notes". Leading/trailing/doubled slashes collapse away
- * (split -> filter(Boolean)). Empty/missing input -> "". */
+/**
+ * Slugifies a "/"-delimited path (a journal's root override or its default folder-hierarchy
+ * path), segment by segment -- "Arc 1/Session Notes" -> "arc-1/session-notes". Leading/trailing/
+ * doubled slashes collapse away (split -> filter(Boolean)).
+ *
+ * @param {string|null|undefined} rawPath
+ * @returns {string} Never `null`/`undefined`; `""` if `rawPath` was empty/missing (unlike
+ *   {@link slugify}, an empty path is a legitimate "no root" result, not an error -- so this does
+ *   NOT fall back to `"untitled"`).
+ */
 export function slugifyPath(rawPath) {
   return String(rawPath ?? "")
     .split("/")
@@ -34,24 +44,28 @@ export function slugifyPath(rawPath) {
     .join("/");
 }
 
-/** Assigns distinct slugs, deliberately not conflated:
- *  - journal._slug: unique per journal entry (disambiguated by journal uuid on
- *    collision), built from the journal's root (a slugified "/"-path prefix,
- *    empty if none) followed by a slug of the journal's own title. Drives the
- *    single-journal archive URL/permalink and the content/ directory name --
- *    two different journals must never collide here, even if they share a
- *    root.
- *  - post._authorSlug: based on the displayed author name of that POST
- *    specifically -- not a journal-wide value, since a post can override its
- *    journal's author (see collector.js's resolvePostAuthor) and needs to
- *    land on its own author's archive page, not its journal's default one.
- *    NOT disambiguated on collision -- this is what lets every post
- *    sharing the same author name merge onto one cross-journal author
- *    archive page, whether that name comes from the same journal or not.
- *    Collision here is the intended behavior, not a bug.
- * Also assigns a unique slug per post within each journal (disambiguated by
- * page uuid). Mutates journals/posts in place, same as the site-template repo's
- * scripts/ingest.js version. */
+/**
+ * Assigns distinct slugs onto each journal/post **in place**, deliberately not conflated:
+ *  - `journal._slug`: unique per journal entry (disambiguated by journal UUID on collision), built
+ *    from the journal's root (a slugified "/"-path prefix, empty if none) followed by a slug of
+ *    the journal's own title. Drives the single-journal archive URL/permalink and the `content/`
+ *    directory name -- two different journals must never collide here, even if they share a root.
+ *  - `post._authorSlug`: based on the displayed author name of that POST specifically -- not a
+ *    journal-wide value, since a post can override its journal's author (see collector.js's
+ *    `resolvePostAuthor`) and needs to land on its own author's archive page, not its journal's
+ *    default one. NOT disambiguated on collision -- this is what lets every post sharing the same
+ *    author name merge onto one cross-journal author archive page, whether that name comes from
+ *    the same journal or not. Collision here is the intended behavior, not a bug.
+ *  - `post._slug`: unique per post within its own journal (disambiguated by page UUID on
+ *    collision).
+ *
+ * Mutates `journals` (and each journal's `posts`) in place, same as the site-template repo's
+ * `scripts/ingest.js` version.
+ *
+ * @param {import("./collector.js").Journal[]} journals The journals to assign slugs onto. Each
+ *   journal and post gains new `_slug`/`_authorSlug` properties; nothing is removed.
+ * @returns {void}
+ */
 export function assignSlugs(journals) {
   const seenJournalSlugs = new Map();
   for (const journal of journals) {
@@ -80,12 +94,24 @@ export function assignSlugs(journals) {
   }
 }
 
-/** A single JSON flow-style object is valid YAML, so this doubles as
- * frontmatter without pulling in a YAML serializer dependency. */
+/**
+ * @param {object} obj The frontmatter fields to serialize.
+ * @returns {string} `obj` wrapped as a `---`-delimited frontmatter block. A single JSON
+ *   flow-style object is valid YAML, so this doubles as frontmatter without pulling in a YAML
+ *   serializer dependency. Never `null`/`undefined`.
+ */
 function toFrontmatter(obj) {
   return `---\n${JSON.stringify(obj, null, 2)}\n---\n`;
 }
 
+/**
+ * @param {string} worldSlug
+ * @param {import("./collector.js").Journal} journal The post's parent journal, already
+ *   slug-assigned (see {@link assignSlugs}).
+ * @param {import("./collector.js").Post} post
+ * @returns {object} The post's frontmatter fields, ready for {@link toFrontmatter}. Never
+ *   `null`/`undefined`.
+ */
 function postFrontmatter(worldSlug, journal, post) {
   return {
     foundryUuid: post.uuid,
@@ -127,10 +153,15 @@ function postFrontmatter(worldSlug, journal, post) {
   };
 }
 
-/** Render a collectJournalData() payload into a flat list of {path, content}
- * files, ready to push individually (e.g. via github.js's putFile). path is
- * relative to the repo root, matching the on-disk layout the site-template
- * repo's scripts/ingest.js produces. */
+/**
+ * Renders a `collectJournalData()` payload into a flat list of `{path, content}` files, ready to
+ * push individually (e.g. via github.js's `putFile`). `path` is relative to the repo root,
+ * matching the on-disk layout the site-template repo's `scripts/ingest.js` produces.
+ *
+ * @param {object} payload A payload from `collectJournalData()` (see collector.js).
+ * @returns {{worldSlug: string, files: {path: string, content: string}[]}} Never
+ *   `null`/`undefined`; `files` is `[]` if `payload.journals` has no posts at all.
+ */
 export function renderPayloadToFiles(payload) {
   const worldSlug = slugify(payload.world?.title || payload.world?.id || "world");
   const journals = payload.journals ?? [];
@@ -148,17 +179,24 @@ export function renderPayloadToFiles(payload) {
   return { worldSlug, files };
 }
 
-/** content/site-config.json: the one non-post-data file this module pushes.
- * Read directly (plain fs, not the content-collections API) by
- * the site repo's src/lib/config.ts at Astro build time -- see that file for
- * how `theme` selects a built-in `[data-theme]` block in the site's own
- * tokens.css, `siteName` replaces the "World2Web" branding throughout the
- * site, `journalsSegment` becomes the "journals" (or whatever it's set to)
- * segment in every journal/post URL (world-first: /<world>/<journalsSegment>/...),
- * and `allowThemeOverride` controls whether the site shows a
- * visitor-facing theme picker at all. Site-wide settings (module setting ->
- * pushed file -> read at build) that need to reach an already-deployed
- * site without any git action belong here. */
+/**
+ * Builds `content/site-config.json` -- the one non-post-data file this module pushes. Read
+ * directly (plain fs, not the content-collections API) by the site repo's `src/lib/config.ts` at
+ * Astro build time -- see that file for how `theme` selects a built-in `[data-theme]` block in the
+ * site's own `tokens.css`, `siteName` replaces the "World2Web" branding throughout the site,
+ * `journalsSegment` becomes the "journals" (or whatever it's set to) segment in every journal/post
+ * URL (world-first: `/<world>/<journalsSegment>/...`), and `allowThemeOverride` controls whether
+ * the site shows a visitor-facing theme picker at all. Site-wide settings (module setting ->
+ * pushed file -> read at build) that need to reach an already-deployed site without any git action
+ * belong here.
+ *
+ * @param {object} config
+ * @param {string} [config.theme] Falls back to `"default"` if falsy.
+ * @param {string} [config.siteName] Falls back to `"World2Web"` if falsy.
+ * @param {string} [config.journalsSegment] Falls back to `"journals"` if falsy.
+ * @param {boolean} [config.allowThemeOverride] Coerced to a plain `boolean`.
+ * @returns {{path: string, content: string}} Never `null`/`undefined`.
+ */
 export function buildSiteConfigFile({ theme, siteName, journalsSegment, allowThemeOverride }) {
   return {
     path: "content/site-config.json",

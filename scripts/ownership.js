@@ -8,31 +8,42 @@
  * is directly Node-testable without stubbing anything.
  */
 
-/** Whether userId had Owner-or-higher permission according to a captured
- * ownership snapshot (an entry's own `.ownership` object, captured at
- * some point in time -- see main.js's trackDeletedPage()) -- the same
- * fallback chain Foundry's own permission resolution uses (an explicit
- * per-user level, else the document's own `default` level). ownerLevel
- * is passed in rather than read from CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER
- * directly, so this file has zero Foundry-global dependency of its own. */
+/**
+ * Whether `userId` had Owner-or-higher permission according to a captured ownership snapshot --
+ * the same fallback chain Foundry's own permission resolution uses (an explicit per-user level,
+ * else the document's own `default` level).
+ *
+ * @param {object|null|undefined} ownership A captured copy of a Foundry document's own
+ *   `.ownership` object (see main.js's `trackDeletedPage()`), or a falsy value if none was
+ *   captured.
+ * @param {string} userId The Foundry User id to check.
+ * @param {number} ownerLevel The permission level that counts as "owner" -- passed in rather than
+ *   read from `CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER` directly, so this file has zero Foundry-
+ *   global dependency of its own.
+ * @returns {boolean} Never `null`/`undefined`.
+ */
 export function ownsSnapshot(ownership, userId, ownerLevel) {
   return (ownership?.[userId] ?? ownership?.default ?? 0) >= ownerLevel;
 }
 
-/** Which UUIDs in a pendingDeletions map (see main.js) should actually be
- * processed right now.
+/**
+ * Which UUIDs in a `pendingDeletions` map (see main.js) should actually be processed right now.
  *
- * scopedToCaller: false (a GM's "Publish to Web" -- and this is the ONLY
- * value it's ever called with for a GM, never conditionally) means every
- * single UUID, completely unfiltered, regardless of any ownership
- * snapshot -- a GM's publish/retraction always means *everyone's*
- * pending work. This is deliberately the one and only place that
- * guarantee is decided, rather than something every call site (both
- * retractPendingDeletions and syncButtonColor use this) has to
- * independently get right.
- *
- * scopedToCaller: true (a player's own scoped publish) means only the
- * UUIDs whose captured ownership snapshot shows userId as an owner. */
+ * @param {Object<string, {ownership: object}>} pending A `pendingDeletions` map: page UUID ->
+ *   `{ ownership }`, where `ownership` is the snapshot {@link ownsSnapshot} expects.
+ * @param {object} options
+ * @param {boolean} options.scopedToCaller `false` (a GM's "Publish to Web" -- the ONLY value it's
+ *   ever called with for a GM, never conditionally) returns every single UUID, completely
+ *   unfiltered, regardless of any ownership snapshot -- a GM's publish/retraction always means
+ *   *everyone's* pending work. This is deliberately the one and only place that guarantee is
+ *   decided, rather than something every call site (both `retractPendingDeletions` and
+ *   `syncButtonColor` use this) has to independently get right. `true` (a player's own scoped
+ *   publish) returns only the UUIDs whose captured snapshot shows `userId` as an owner.
+ * @param {string} options.userId The Foundry User id to scope to when `scopedToCaller` is `true`.
+ *   Ignored otherwise.
+ * @param {number} options.ownerLevel Passed straight through to {@link ownsSnapshot}.
+ * @returns {string[]} Never `null`/`undefined`; `[]` if `pending` is empty or nothing qualifies.
+ */
 export function scopedDeletionUuids(pending, { scopedToCaller, userId, ownerLevel }) {
   return Object.keys(pending).filter(
     (uuid) => !scopedToCaller || ownsSnapshot(pending[uuid]?.ownership, userId, ownerLevel),
