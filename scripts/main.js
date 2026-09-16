@@ -32,14 +32,19 @@ const NETLIFY_DEPLOY_URL = `https://app.netlify.com/start/deploy?repository=${en
 const CLOUDFLARE_DEPLOY_URL = `https://deploy.workers.cloudflare.com/?url=${encodeURIComponent(SITE_TEMPLATE_REPO_URL)}`;
 const VERCEL_DEPLOY_URL = `https://vercel.com/new/clone?repository-url=${encodeURIComponent(SITE_TEMPLATE_REPO_URL)}`;
 
-/** Every user-displayed string in this module goes through here (or, for
- * game.settings.register()'s name/hint and DialogV2 button labels, is
- * passed as a bare "WORLD2WEB.X" key directly -- Foundry localizes those
- * itself when rendering). data present -> game.i18n.format() for {ph}
- * placeholders; absent -> plain game.i18n.localize(). Console
- * (console.log/warn/error) and thrown Error() messages are deliberately
- * NOT localized -- diagnostic/developer-facing, not UI a player or GM
- * reads, same convention most Foundry modules use. */
+/**
+ * Localizes `key` under the `WORLD2WEB.` namespace. Every user-displayed string in this module
+ * goes through here (or, for `game.settings.register()`'s name/hint and DialogV2 button labels, is
+ * passed as a bare "WORLD2WEB.X" key directly -- Foundry localizes those itself when rendering).
+ * Console (`console.log`/`warn`/`error`) and thrown `Error()` messages are deliberately NOT
+ * localized -- diagnostic/developer-facing, not UI a player or GM reads, same convention most
+ * Foundry modules use.
+ *
+ * @param {string} key A key under `WORLD2WEB.`, e.g. `"Notify.Published"`.
+ * @param {object} [data] `{ph}`-style placeholder values. When present, uses
+ *   `game.i18n.format()`; when absent, plain `game.i18n.localize()`.
+ * @returns {string} Never `null`/`undefined`.
+ */
 function t(key, data) {
   const fullKey = `${I18N_NS}.${key}`;
   return data ? game.i18n.format(fullKey, data) : game.i18n.localize(fullKey);
@@ -266,6 +271,11 @@ Hooks.once("init", () => {
   });
 });
 
+/**
+ * @returns {{owner: string, repo: string, token: string, branch: string}|null} The trimmed GitHub
+ *   owner/repo/token/branch settings, or `null` if owner, repo, or token is unset/blank. `branch`
+ *   falls back to `"main"` if unset.
+ */
 function getGithubConfig() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
@@ -294,22 +304,25 @@ function getGithubConfig() {
 // frontmatter straight on GitHub (github.js's retractDeletedPost) rather
 // than trying to reconstruct a post from a document that's gone.
 
-/** Retracts every page currently tracked in pendingDeletions -- or, when
- * scopedToCaller is set (a player's own "Publish to Web," see "Player
- * self-publish" below), only the ones whose captured ownership snapshot
- * shows the *current* user as an owner, so a player's publish can't
- * retract someone else's deleted content. A UUID with no recorded path
- * (never actually got published, or predates this feature existing at
- * all) has nothing to retract and is just dropped -- there's no file to
- * touch either way. Passes expectedUuid through to retractDeletedPost so
- * a same-run race (a brand-new page published with the same resulting
- * slug already overwrote this exact path earlier in this very publish,
- * via pushFiles() above) backs off instead of unpublishing that live
- * content by mistake -- see that function's own doc comment. One failure
- * doesn't stop the rest -- it's simply left in pendingDeletions for the
- * next publish to retry, same "one bad item doesn't fail the batch"
- * pattern assets.js already uses for a failed image fetch. Returns the
- * count actually retracted, for the publish notification. */
+/**
+ * Retracts every page currently tracked in `pendingDeletions` -- or, when `scopedToCaller` is set
+ * (a player's own "Publish to Web," see "Player self-publish" below), only the ones whose captured
+ * ownership snapshot shows the *current* user as an owner, so a player's publish can't retract
+ * someone else's deleted content. A UUID with no recorded path (never actually got published, or
+ * predates this feature existing at all) has nothing to retract and is just dropped -- there's no
+ * file to touch either way. Passes `expectedUuid` through to `retractDeletedPost` so a same-run
+ * race (a brand-new page published with the same resulting slug already overwrote this exact path
+ * earlier in this very publish, via `pushFiles()` above) backs off instead of unpublishing that
+ * live content by mistake -- see that function's own doc comment. One failure doesn't stop the
+ * rest -- it's simply left in `pendingDeletions` for the next publish to retry, same "one bad item
+ * doesn't fail the batch" pattern assets.js already uses for a failed image fetch.
+ *
+ * @param {import("./github.js").RepoTarget} config
+ * @param {object} [options]
+ * @param {boolean} [options.scopedToCaller]
+ * @returns {Promise<number>} The count actually retracted, for the publish notification. `0` if
+ *   nothing was pending (or, when scoped, nothing pending belonged to the caller).
+ */
 async function retractPendingDeletions(config, { scopedToCaller = false } = {}) {
   const pending = game.settings.get(MODULE_ID, "pendingDeletions");
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
@@ -347,11 +360,16 @@ async function retractPendingDeletions(config, { scopedToCaller = false } = {}) 
   return retractedCount;
 }
 
-/** Records every post actually in this payload -- published or already-
- * tombstoned -- into publishedPaths, so a future deletion of any of them
- * can be retracted later. Overlays onto the existing map rather than
- * replacing it outright, so nothing from a prior publish is lost if this
- * one's payload doesn't happen to include it for some reason. */
+/**
+ * Records every post actually in this payload -- published or already-tombstoned -- into
+ * `publishedPaths`, so a future deletion of any of them can be retracted later. Overlays onto the
+ * existing map rather than replacing it outright, so nothing from a prior publish is lost if this
+ * one's payload doesn't happen to include it for some reason.
+ *
+ * @param {object} payload A payload from `collectJournalData()` (see collector.js).
+ * @param {string} worldSlug
+ * @returns {Promise<void>}
+ */
 async function recordPublishedPaths(payload, worldSlug) {
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
   const next = { ...paths };
@@ -363,19 +381,22 @@ async function recordPublishedPaths(payload, worldSlug) {
   await game.settings.set(MODULE_ID, "publishedPaths", next);
 }
 
-/** A previously-published page or entry was just deleted -- see the
- * "Deleted pages/entries" section above. Records its UUID in
- * pendingDeletions (along with a snapshot of its owning entry's
- * ownership map, so a player's later scoped publish -- see "Player
- * self-publish" below -- can tell whether this deletion is theirs to
- * retract, since the entry itself won't exist anymore to check directly
- * by then) and refreshes the sync buttons immediately, since nothing
- * else could notice this happened otherwise (by the next render there's
- * no document left for the usual per-page scan to see). `entry` is the
- * page's owning JournalEntry -- passed in rather than read from
- * `page.parent`, since a whole-entry deletion may have already detached
- * that reference by the time this runs; see the delete hooks at the
- * bottom of this file for why each one passes it explicitly. */
+/**
+ * A previously-published page or entry was just deleted -- see the "Deleted pages/entries" section
+ * above. Records its UUID in `pendingDeletions` (along with a snapshot of its owning entry's
+ * ownership map, so a player's later scoped publish -- see "Player self-publish" below -- can tell
+ * whether this deletion is theirs to retract, since the entry itself won't exist anymore to check
+ * directly by then) and refreshes the sync buttons immediately, since nothing else could notice
+ * this happened otherwise (by the next render there's no document left for the usual per-page scan
+ * to see).
+ *
+ * @param {JournalEntryPage} page The Foundry native JournalEntryPage document that was deleted.
+ * @param {JournalEntry|null|undefined} entry The page's owning JournalEntry -- passed in rather
+ *   than read from `page.parent`, since a whole-entry deletion may have already detached that
+ *   reference by the time this runs; see the delete hooks at the bottom of this file for why each
+ *   one passes it explicitly.
+ * @returns {Promise<void>}
+ */
 async function trackDeletedPage(page, entry) {
   if (!page?.flags?.[MODULE_ID]?.publishedAt) return; // never published -- nothing to retract
   const pending = game.settings.get(MODULE_ID, "pendingDeletions");
@@ -387,21 +408,22 @@ async function trackDeletedPage(page, entry) {
   refreshSyncButtonColors();
 }
 
-/** Collect + fetch/content-address images + render + push directly to
- * GitHub -- no local script, no download. Safe to call repeatedly:
- * putFile/putBinaryAssetIfMissing (github.js) skip anything that hasn't
- * actually changed, so re-publishing everyone's journals just to publish your
- * own new post doesn't spam the repo history.
+/**
+ * Collects + fetches/content-addresses images + renders + pushes directly to GitHub -- no local
+ * script, no download. Safe to call repeatedly: `putFile`/`putBinaryAssetIfMissing` (github.js)
+ * skip anything that hasn't actually changed, so re-publishing everyone's journals just to publish
+ * your own new post doesn't spam the repo history.
  *
- * scopedToCaller (a player's own "Publish to Web," see "Player
- * self-publish" below -- never set for the GM's, which always means
- * everything): restricts collection to entries the calling user owns
- * (collector.js's own scopedToCaller) and retraction to deletions their
- * ownership snapshot covers (retractPendingDeletions' own scopedToCaller)
- * -- so a player's publish only ever touches what's actually theirs.
- * Everything else here (asset fetching, pushFiles, contentHashes,
- * publishedPaths) needs no scoping of its own: it just operates on
- * whatever ends up in this already-scoped payload. */
+ * @param {object} [options]
+ * @param {boolean} [options.scopedToCaller] A player's own "Publish to Web" (see "Player
+ *   self-publish" below -- never set for the GM's, which always means everything): restricts
+ *   collection to entries the calling user owns (collector.js's own `scopedToCaller`) and
+ *   retraction to deletions their ownership snapshot covers ({@link retractPendingDeletions}'s own
+ *   `scopedToCaller`) -- so a player's publish only ever touches what's actually theirs.
+ *   Everything else here (asset fetching, `pushFiles`, `contentHashes`, `publishedPaths`) needs no
+ *   scoping of its own: it just operates on whatever ends up in this already-scoped payload.
+ * @returns {Promise<void>}
+ */
 async function publishToGitHub({ scopedToCaller = false } = {}) {
   const config = getGithubConfig();
   if (!config) {
@@ -497,9 +519,13 @@ Hooks.once("ready", () => {
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
 });
 
-/** Builds (but doesn't insert) the Dev Sync button -- shared by the initial
- * render and the updateSetting listener below it, so toggling "Enable Dev
- * Mode" doesn't need a page reload to take effect. */
+/**
+ * Builds (but doesn't insert) the Dev Sync button -- shared by the initial render and the
+ * `updateSetting` listener below it, so toggling "Enable Dev Mode" doesn't need a page reload to
+ * take effect.
+ *
+ * @returns {HTMLButtonElement}
+ */
 function createDevSyncButton() {
   const devSyncButton = document.createElement("button");
   devSyncButton.type = "button";
@@ -613,6 +639,13 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
 // as a belt-and-suspenders fallback in case that assumption is wrong for
 // some system.
 
+/**
+ * @param {object} app A Foundry native `ApplicationV2` instance (a journal entry sheet, or a
+ *   popped-out single-page editor).
+ * @returns {JournalEntryPage|null} The page currently shown -- the document itself for a
+ *   popped-out page editor, or whichever page is selected in a multi-page entry sheet. `null` if
+ *   `app` has no document, or (for an entry sheet) no page is currently selected.
+ */
 function getCurrentPage(app) {
   const doc = app?.document ?? app?.object;
   if (!doc) return null;
@@ -621,14 +654,23 @@ function getCurrentPage(app) {
   return pageId ? (doc.pages?.get?.(pageId) ?? null) : null;
 }
 
-/** The JournalEntry that owns the sheet being rendered -- the entry itself
- * for JournalEntrySheet, or its parent for a popped-out page editor. */
+/**
+ * @param {object} app A Foundry native `ApplicationV2` instance.
+ * @returns {JournalEntry|null} The JournalEntry that owns the sheet being rendered -- the entry
+ *   itself for a `JournalEntrySheet`, or its parent for a popped-out page editor. `null` if `app`
+ *   has no document.
+ */
 function getOwningEntry(app) {
   const doc = app?.document ?? app?.object;
   if (!doc) return null;
   return doc.documentName === "JournalEntryPage" ? doc.parent : doc;
 }
 
+/**
+ * @param {string} [str] `null`/`undefined` are treated as `""`.
+ * @returns {string} `str` with `& < > " '` escaped for safe use in an HTML attribute value. Never
+ *   `null`/`undefined`; `""` if `str` was empty or absent.
+ */
 function escapeHtml(str) {
   return String(str ?? "").replace(
     /[&<>"']/g,
@@ -653,12 +695,15 @@ function escapeHtml(str) {
 // downloading the raw collected payload isn't something this feature was
 // ever meant to grant a self-publishing player.
 
-/** Whether the current user can see/use this entry's journal controls
- * (Publishing Settings, Post Settings, publish icons) -- the GM always can;
- * a player can too, but only for an entry they actually own
- * (Foundry's own `isOwner` getter, always correct for whichever
- * client is asking), and only once a GM has opted into that at all via
- * the allowPlayerSelfPublish setting. */
+/**
+ * Whether the current user can see/use this entry's journal controls (Publishing Settings, Post
+ * Settings, publish icons) -- the GM always can; a player can too, but only for an entry they
+ * actually own (Foundry's own `isOwner` getter, always correct for whichever client is asking),
+ * and only once a GM has opted into that at all via the `allowPlayerSelfPublish` setting.
+ *
+ * @param {JournalEntry|null|undefined} entry The Foundry native JournalEntry document to check.
+ * @returns {boolean} Never `null`/`undefined`.
+ */
 function canControlJournal(entry) {
   if (game.user.isGM) return true;
   if (!game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) return false;
@@ -682,17 +727,22 @@ const DEPLOY_URLS_BY_ACTION = {
   "deploy-vercel": VERCEL_DEPLOY_URL,
 };
 
-// Confirmed live: the typed repo name (see openDeployStep1ChooseHost) only
-// ever reaches *this module's own* later steps by default -- none of these
-// three hosts' own "Project name" fields pick it up automatically, since
-// that has to come from a URL parameter specific to each host, and only
-// Vercel's own deploy-button docs (vercel.com/docs/deploy-button) document
-// one (`project-name`) -- Netlify's and Cloudflare's own deploy-button docs
-// (checked directly) document no equivalent, only `url`/`repository`. So
-// this only ever changes Vercel's link; Netlify and Cloudflare still show
-// the *template's own* name (world2web-site-template) as their suggested
-// default, same as before -- Dialog.DeploySiteRepoNameHint says so
-// explicitly, so nobody's left guessing why Vercel looks different.
+/**
+ * Confirmed live: the typed repo name (see {@link openDeployStep1ChooseHost}) only ever reaches
+ * *this module's own* later steps by default -- none of these three hosts' own "Project name"
+ * fields pick it up automatically, since that has to come from a URL parameter specific to each
+ * host, and only Vercel's own deploy-button docs (vercel.com/docs/deploy-button) document one
+ * (`project-name`) -- Netlify's and Cloudflare's own deploy-button docs (checked directly)
+ * document no equivalent, only `url`/`repository`. So this only ever changes Vercel's link;
+ * Netlify and Cloudflare still show the *template's own* name (world2web-site-template) as their
+ * suggested default -- `Dialog.DeploySiteRepoNameHint` says so explicitly, so nobody's left
+ * guessing why Vercel looks different.
+ *
+ * @param {string} action One of the keys in {@link DEPLOY_URLS_BY_ACTION}.
+ * @param {string} [repoName] The repo name typed in step 1 -- only used for Vercel's own
+ *   `project-name` parameter.
+ * @returns {string|null} The deploy URL, or `null` if `action` isn't a recognized host.
+ */
 function buildDeployUrl(action, repoName) {
   const base = DEPLOY_URLS_BY_ACTION[action];
   if (!base) return null;
@@ -702,17 +752,19 @@ function buildDeployUrl(action, repoName) {
   return base;
 }
 
-// GitHub's own documented "template URL" feature for fine-grained PAT
-// creation (github.blog/changelog/2025-08-26-template-urls-for-fine-grained-pats...)
-// -- confirmed against GitHub's docs, not guessed. `target_name` pre-selects
-// the resource owner (only meaningful if we already know it -- omitted on
-// a first-ever setup); `contents=write` pre-checks exactly the "Contents:
-// Read and write" permission this module actually needs, matching the repo
-// permission called out throughout this README/lang file already. There's
-// no documented parameter for pre-selecting which specific repo under that
-// owner -- GitHub still requires picking "Only select repositories" and the
-// exact repo by hand, so this only saves the owner + permission steps, not
-// the whole thing.
+/**
+ * GitHub's own documented "template URL" feature for fine-grained PAT creation
+ * (github.blog/changelog/2025-08-26-template-urls-for-fine-grained-pats...) -- confirmed against
+ * GitHub's docs, not guessed. `contents=write` pre-checks exactly the "Contents: Read and write"
+ * permission this module actually needs, matching the repo permission called out throughout the
+ * README/lang file already. There's no documented parameter for pre-selecting which specific repo
+ * under that owner -- GitHub still requires picking "Only select repositories" and the exact repo
+ * by hand, so this only saves the owner + permission steps, not the whole thing.
+ *
+ * @param {string} [owner] Pre-selects the resource owner in the URL (`target_name`) when known;
+ *   omitted on a first-ever setup.
+ * @returns {string}
+ */
 function buildGithubTokenUrl(owner) {
   const params = new URLSearchParams({
     name: "World2Web",
@@ -723,28 +775,32 @@ function buildGithubTokenUrl(owner) {
   return `https://github.com/settings/personal-access-tokens/new?${params.toString()}`;
 }
 
-// Step 1/3: name the new repo, then pick a host and open its one-click
-// deploy flow. See DEPLOY_URLS_BY_ACTION's own doc comment for what
-// "already configured" means and why it's worth warning about regardless
-// of which host gets picked.
-//
-// The repo-name field exists because of a real structural gap: whatever
-// name gets typed into the *host's own* form (its "Project name" field,
-// per the Cloudflare screenshot this was built against) never reaches
-// Foundry at all -- that page runs entirely on the host's own site, with
-// no callback of any kind back here. Before this field existed, steps 2
-// and 3 had nothing to go on but this module's *previous* settings (or
-// nothing, on a first-ever setup), which could default to genuinely the
-// wrong repo -- confirmed live: it pointed at gludington's own
-// world2web-site-template, which isn't even a repo anyone else has, let
-// alone the one they just meant to create. There's no way to fix this by
-// deriving the name automatically, so instead: ask for it here first, and
-// use whatever's typed as the name to actually create on the host's own
-// form a moment later -- then thread it through steps 2 and 3 so nothing
-// downstream ever has to guess or get retyped.
-//
-// Returns { url, repoName } to advance to step 2, or null to abort the
-// whole wizard (Cancel or the dialog closed).
+/**
+ * Step 1/3 of the Setup Wizard: name the new repo, then pick a host and open its one-click deploy
+ * flow. See {@link DEPLOY_URLS_BY_ACTION}'s own doc comment for what "already configured" means
+ * and why it's worth warning about regardless of which host gets picked.
+ *
+ * The repo-name field exists because of a real structural gap: whatever name gets typed into the
+ * *host's own* form (its "Project name" field, per the Cloudflare screenshot this was built
+ * against) never reaches Foundry at all -- that page runs entirely on the host's own site, with no
+ * callback of any kind back here. Before this field existed, steps 2 and 3 had nothing to go on
+ * but this module's *previous* settings (or nothing, on a first-ever setup), which could default
+ * to genuinely the wrong repo -- confirmed live: it pointed at gludington's own
+ * world2web-site-template, which isn't even a repo anyone else has, let alone the one they just
+ * meant to create. There's no way to fix this by deriving the name automatically, so instead: ask
+ * for it here first, and use whatever's typed as the name to actually create on the host's own
+ * form a moment later -- then thread it through steps 2 and 3 so nothing downstream ever has to
+ * guess or get retyped.
+ *
+ * @param {boolean} alreadyConfigured Whether GitHub owner/repo/token are already set -- shows a
+ *   warning that continuing creates a separate, new site rather than touching the existing one.
+ * @param {string} [owner] The currently-configured GitHub owner, if any -- shown in the warning.
+ * @param {string} [repo] The currently-configured GitHub repo, if any -- pre-fills the repo-name
+ *   field and is shown in the warning.
+ * @returns {Promise<{url: string, repoName: string}|null>} The opened deploy URL and the typed
+ *   repo name, to advance to step 2, or `null` to abort the whole wizard (Cancel, the dialog
+ *   closed, or an unrecognized host).
+ */
 async function openDeployStep1ChooseHost(alreadyConfigured, owner, repo) {
   const warning = alreadyConfigured
     ? `<p class="notification warning">${t("Dialog.DeploySiteAlreadyConfiguredWarning", { owner: escapeHtml(owner), repo: escapeHtml(repo) })}</p>`
@@ -802,17 +858,20 @@ async function openDeployStep1ChooseHost(alreadyConfigured, owner, repo) {
   return { url, repoName: result.repoName };
 }
 
-// Step 2/3: send them to GitHub to create the token this module needs to
-// push. Opening the link and advancing the wizard are the same button --
-// DialogV2.wait() closes on any button click, so there's no way to open
-// the link, keep this dialog open, and wait for a separate "I'm done"
-// click without dropping to DialogV2's lower-level (non-wait) API, which
-// isn't worth the added risk for a single extra click saved. repoName
-// (from step 1) is named explicitly in this dialog's own text, since
-// GitHub's fine-grained PAT template-URL feature (see buildGithubTokenUrl)
-// has no parameter for pre-selecting a specific repository -- only the
-// resource owner. Returns true to advance to step 3, false to abort
-// (Cancel or closed).
+/**
+ * Step 2/3: sends the GM to GitHub to create the token this module needs to push. Opening the link
+ * and advancing the wizard are the same button -- `DialogV2.wait()` closes on any button click, so
+ * there's no way to open the link, keep this dialog open, and wait for a separate "I'm done" click
+ * without dropping to DialogV2's lower-level (non-`wait`) API, which isn't worth the added risk
+ * for a single extra click saved.
+ *
+ * @param {string} [owner] Pre-selects the token's resource owner (see
+ *   {@link buildGithubTokenUrl}).
+ * @param {string} repoName Named explicitly in this dialog's own text, since GitHub's
+ *   fine-grained PAT template-URL feature has no parameter for pre-selecting a specific repository
+ *   -- only the resource owner.
+ * @returns {Promise<boolean>} `true` to advance to step 3, `false` to abort (Cancel or closed).
+ */
 async function openDeployStep2CreateToken(owner, repoName) {
   const content = `
     <p><strong>${t("Dialog.DeployStep2Of3")}</strong></p>
@@ -835,14 +894,18 @@ async function openDeployStep2CreateToken(owner, repoName) {
   return true;
 }
 
-// Step 3/3: a real form, not a pointer back to Configure Settings -- saves
-// directly via game.settings.set() so finishing this wizard is actually
-// finishing setup, not "now go find these same three fields somewhere
-// else and retype them." Pre-filled with whatever's already configured
-// (all blank on a first-ever setup), so re-running this wizard to update
-// one value doesn't require retyping the other two. Form values are read
-// directly off the DOM by name, same reasoning as openJournalConfigDialog's
-// own doc comment (sidesteps FormDataExtended version drift).
+/**
+ * Step 3/3: a real form, not a pointer back to Configure Settings -- saves directly via
+ * `game.settings.set()` so finishing this wizard is actually finishing setup, not "now go find
+ * these same three fields somewhere else and retype them." Form values are read directly off the
+ * DOM by name, same reasoning as {@link openJournalConfigDialog}'s own doc comment (sidesteps
+ * `FormDataExtended` version drift).
+ *
+ * @param {{owner?: string, repo?: string, token?: string}} defaults Pre-fills the form -- all
+ *   blank on a first-ever setup, so re-running this wizard to update one value doesn't require
+ *   retyping the other two.
+ * @returns {Promise<void>}
+ */
 async function openDeployStep3SaveSettings(defaults) {
   const content = `
     <p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>
@@ -909,6 +972,14 @@ async function openDeployStep3SaveSettings(defaults) {
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.DeploySiteSaved")}`);
 }
 
+/**
+ * Orchestrates the three-step Setup Wizard (see each step function's own doc comment for what it
+ * does and why it's split out): deploying a site, creating a GitHub token, and configuring this
+ * module's own settings are genuinely three separate destinations (a chosen host's own site,
+ * GitHub's own settings pages, and this module).
+ *
+ * @returns {Promise<void>}
+ */
 async function openDeploySiteDialog() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
@@ -924,14 +995,16 @@ async function openDeploySiteDialog() {
   await openDeployStep3SaveSettings({ owner, repo: step1.repoName || repo, token });
 }
 
-// Entry-level publishing config, edited via a dialog opened from a header
-// button (injectJournalConfigButton). Unlike the per-page publish button below
-// (verified live, see README), this dialog is new and untested against a
-// real Foundry instance -- DialogV2 (foundry.applications.api.DialogV2) is
-// the standard modern (v12+) dialog API, but its exact button-callback
-// signature is taken on faith here rather than confirmed live. Form values
-// are read directly off the DOM form elements by name rather than via
-// Foundry's FormDataExtended, to sidestep any version drift in that class.
+/**
+ * Opens the entry-level publishing config dialog, edited via a header button (see
+ * {@link injectJournalConfigButton}). DialogV2 (`foundry.applications.api.DialogV2`) is the
+ * standard modern (v12+) dialog API, but its exact button-callback signature is taken on faith
+ * here rather than confirmed live. Form values are read directly off the DOM form elements by name
+ * rather than via Foundry's `FormDataExtended`, to sidestep any version drift in that class.
+ *
+ * @param {JournalEntry} entry The Foundry native JournalEntry document to configure.
+ * @returns {Promise<void>}
+ */
 async function openJournalConfigDialog(entry) {
   const config = entry.flags?.[MODULE_ID] ?? {};
   const defaultAuthor = resolveDefaultAuthor(entry);
@@ -1040,12 +1113,17 @@ async function openJournalConfigDialog(entry) {
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.PublishingSettingsSaved", { name: entry.name })}`);
 }
 
-/** Gear-icon header button, entry sheets only (not the popped-out page
- * editor) -- opens the dialog above. Shown unconditionally (for whoever
- * can see it at all) so a GM -- or an owning player, once
- * allowPlayerSelfPublish is on -- can turn publishing *on* from an
- * unpublished entry, unlike the per-page publish button which only makes
- * sense once the entry itself is publishable. */
+/**
+ * Gear-icon header button, entry sheets only (not the popped-out page editor) -- opens
+ * {@link openJournalConfigDialog}. Shown unconditionally (for whoever can see it at all) so a GM
+ * -- or an owning player, once `allowPlayerSelfPublish` is on -- can turn publishing *on* from an
+ * unpublished entry, unlike the per-page publish button which only makes sense once the entry
+ * itself is publishable.
+ *
+ * @param {object} app A Foundry native `ApplicationV2` instance (the journal entry sheet).
+ * @param {HTMLElement} header The sheet's `.window-header` element to inject the button into.
+ * @returns {void}
+ */
 function injectJournalConfigButton(app, header) {
   const doc = app?.document ?? app?.object;
   if (doc?.documentName !== "JournalEntry") return;
@@ -1068,15 +1146,18 @@ function injectJournalConfigButton(app, header) {
   else header.appendChild(button);
 }
 
-/** Per-post config, mirroring the journal-level dialog above but scoped to a
- * single page's own flags -- author/tags/front-image overrides only (no
- * "published" checkbox: that's the separate per-page publish control; no
- * root/postOrder: those stay journal-level-only concepts). Any field left
- * blank falls back to the journal's own resolved value, the same
- * "blank = inherit" convention every other override in this module
- * already uses -- see collector.js's resolvePostAuthor()/
- * resolvePostTags(). Front image has no journal-level equivalent to inherit
- * from at all (resolvePostFrontImage()). */
+/**
+ * Per-post config, mirroring {@link openJournalConfigDialog} above but scoped to a single page's
+ * own flags -- author/tags/front-image overrides only (no "published" checkbox: that's the
+ * separate per-page publish control; no root/postOrder: those stay journal-level-only concepts).
+ * Any field left blank falls back to the journal's own resolved value, the same "blank = inherit"
+ * convention every other override in this module already uses -- see collector.js's
+ * `resolvePostAuthor()`/`resolvePostTags()`. Front image has no journal-level equivalent to inherit
+ * from at all (`resolvePostFrontImage()`).
+ *
+ * @param {JournalEntryPage} page The Foundry native JournalEntryPage document to configure.
+ * @returns {Promise<void>}
+ */
 async function openPostConfigDialog(page) {
   const config = page.flags?.[MODULE_ID] ?? {};
   const journalAuthor = resolveJournalAuthor(page.parent);
@@ -1182,6 +1263,11 @@ async function openPostConfigDialog(page) {
 // needing that hook at all -- it works identically whichever dialog is
 // open, and across as many opens/closes as happen, no attach/detach
 // bookkeeping required.
+/**
+ * @param {EventTarget|null} target
+ * @returns {boolean} Whether `target` is the "Author Actor override" `<input>` in either
+ *   {@link openJournalConfigDialog} or {@link openPostConfigDialog}.
+ */
 function isActorAuthorInput(target) {
   return target instanceof HTMLInputElement && target.name === "authorActorUuid";
 }
@@ -1232,13 +1318,16 @@ document.addEventListener("drop", (event) => {
   event.target.dispatchEvent(new Event("input", { bubbles: true }));
 });
 
-/** Publish (never -> published), republish (dirty -> bump updatedAt), or
- * unpublish (clean -> published: false) -- which of the three depends on
- * the page's current state, so the caller doesn't need to know which. A
- * page that's clean (published and up to date) is the one case where
- * there's nothing useful left to "republish" -- so clicking it there
- * unpublishes instead, rather than just bumping updatedAt for no visible
- * effect. */
+/**
+ * Publish (never -> published), republish (dirty -> bump updatedAt), or unpublish (clean ->
+ * published: false) -- which of the three depends on the page's current state, so the caller
+ * doesn't need to know which. A page that's clean (published and up to date) is the one case where
+ * there's nothing useful left to "republish" -- so clicking it there unpublishes instead, rather
+ * than just bumping `updatedAt` for no visible effect.
+ *
+ * @param {JournalEntryPage} page The Foundry native JournalEntryPage document to toggle.
+ * @returns {Promise<void>}
+ */
 async function togglePublish(page) {
   if (!isPageTypePublishable(page)) {
     ui.notifications.warn(`${t("Notify.Prefix")}: ${unpublishableMessage(page)}`);
@@ -1269,6 +1358,10 @@ async function togglePublish(page) {
 // as dirty immediately after we just published it.
 const DIRTY_GRACE_MS = 2000;
 
+/**
+ * @param {JournalEntryPage} page
+ * @returns {"never"|"dirty"|"clean"}
+ */
 function getPublishState(page) {
   const flags = page.flags?.[MODULE_ID];
   if (!flags?.published) return "never";
@@ -1276,18 +1369,6 @@ function getPublishState(page) {
   return modifiedTime > flags.updatedAt + DIRTY_GRACE_MS ? "dirty" : "clean";
 }
 
-/** "Uncommitted": this page's current local state -- its content (dirty)
- * or its published/unpublished flag itself -- hasn't been confirmed by a
- * successful sync (Publish to Web, or Dev Sync in dev mode) yet. A page
- * that's never been touched at all (no flags.updatedAt) is never pending;
- * there's nothing local to reconcile. Note: for an unpublish, this only
- * reflects whether a sync has run *since* the unpublish -- for Publish to
- * Web specifically, it doesn't (yet) mean the file was actually removed
- * from GitHub, since pushFiles/putFile only ever create or update files,
- * never delete (see collectPost() in collector.js for the soft-delete
- * tombstone that works around that). Dev Sync never pushes anywhere at
- * all -- it only counts here as "the GM has taken the current state out of
- * Foundry," a separate, weaker claim than "it's live." */
 // This client's own authoritative view of lastSyncAt -- read lazily from
 // game.settings on first use, then updated directly by markSynced() and by
 // the updateSetting hook below (which fires whenever ANY client, including
@@ -1301,6 +1382,11 @@ function getPublishState(page) {
 // our own cache instead of re-asking Foundry sidesteps that regardless of
 // what's actually racing what.
 let cachedLastSyncAt = null;
+
+/**
+ * @returns {number} This client's own cached `lastSyncAt`, lazily initialized from
+ *   `game.settings` on first call -- see the comment above. `0` if nothing has ever synced.
+ */
 function getLastSyncAt() {
   if (cachedLastSyncAt === null) cachedLastSyncAt = game.settings.get(MODULE_ID, "lastSyncAt") ?? 0;
   return cachedLastSyncAt;
@@ -1334,6 +1420,24 @@ Hooks.on("updateSetting", (setting) => {
   refreshSyncButtonColors();
 });
 
+/**
+ * "Uncommitted": this page's current local state -- its content (dirty) or its
+ * published/unpublished flag itself -- hasn't been confirmed by a successful sync (Publish to
+ * Web, or Dev Sync in dev mode) yet. A page that's never been touched at all (no
+ * `flags.updatedAt`) is never pending; there's nothing local to reconcile. Note: for an unpublish,
+ * this only reflects whether a sync has run *since* the unpublish -- for Publish to Web
+ * specifically, it doesn't (yet) mean the file was actually removed from GitHub, since
+ * `pushFiles`/`putFile` only ever create or update files, never delete (see `collectPost()` in
+ * collector.js for the soft-delete tombstone that works around that). Dev Sync never pushes
+ * anywhere at all -- it only counts here as "the GM has taken the current state out of Foundry," a
+ * separate, weaker claim than "it's live."
+ *
+ * @param {JournalEntryPage} page
+ * @param {number} [lastSyncAtOverride] Use this instead of {@link getLastSyncAt}'s cached value --
+ *   passed by callers that just learned the new value directly (see `markSynced`/the
+ *   `updateSetting` hook) rather than relying on the module-level cache.
+ * @returns {boolean}
+ */
 function isPagePending(page, lastSyncAtOverride) {
   const flags = page.flags?.[MODULE_ID];
   if (!flags?.updatedAt) return false;
@@ -1342,6 +1446,11 @@ function isPagePending(page, lastSyncAtOverride) {
   return getPublishState(page) === "dirty";
 }
 
+/**
+ * @param {"never"|"dirty"|"clean"} status
+ * @param {boolean} pending
+ * @returns {string}
+ */
 function publishTooltip(status, pending) {
   if (status === "dirty") return t("Tooltip.PublishDirty");
   if (status === "clean") {
@@ -1350,35 +1459,47 @@ function publishTooltip(status, pending) {
   return pending ? t("Tooltip.PublishNeverPending") : t("Tooltip.PublishNever");
 }
 
+/**
+ * @param {"never"|"dirty"|"clean"} status
+ * @param {boolean} pending
+ * @returns {string} A CSS color value, or `"inherit"`.
+ */
 function publishIconColor(status, pending) {
   if (pending) return COLOR_UNCOMMITTED;
   if (status === "clean") return COLOR_COMMITTED;
   return "inherit";
 }
 
-/** Shared copy for a page whose type has no publish path at all (see
- * collector.js's isPageTypePublishable) -- used for both the icon's tooltip
- * and the notification a click pops instead of actually publishing. */
+/**
+ * Shared copy for a page whose type has no publish path at all (see collector.js's
+ * `isPageTypePublishable`) -- used for both the icon's tooltip and the notification a click pops
+ * instead of actually publishing.
+ *
+ * @param {JournalEntryPage} page
+ * @returns {string}
+ */
 function unpublishableMessage(page) {
   return t("Notify.PageTypeNotPublishable", { name: page.name, type: page.type });
 }
 
-/** Scans every page in every journal entry for the amber/green coloring
- * shared by the sync buttons (Dev Sync, Publish to Web): amber if anything
- * is pending, green if everything touched is confirmed synced, or leaves
- * default styling alone if nothing's ever been published at all. Also
- * amber whenever a relevant pendingDeletions entry exists -- a deleted
- * page/entry no longer exists to be caught by the per-page scan below at
- * all, so that's the only other place this needs checking (see
- * trackDeletedPage()).
+/**
+ * Scans every page in every journal entry for the amber/green coloring shared by the sync buttons
+ * (Dev Sync, Publish to Web): amber if anything is pending, green if everything touched is
+ * confirmed synced, or leaves default styling alone if nothing's ever been published at all. Also
+ * amber whenever a relevant `pendingDeletions` entry exists -- a deleted page/entry no longer
+ * exists to be caught by the per-page scan below at all, so that's the only other place this needs
+ * checking (see {@link trackDeletedPage}).
  *
- * For the GM this is the same global scan it's always been -- amber if
- * *anything*, anyone's, is pending. For a non-GM (only reached here at
- * all when allowPlayerSelfPublish is on, see "Player self-publish"
- * above) it's scoped to what they actually own, matching what their own
- * "Publish to Web" click would actually touch -- otherwise the button
- * could sit amber over someone else's pending work a player's own
- * publish would never resolve. */
+ * For the GM this is the same global scan it's always been -- amber if *anything*, anyone's, is
+ * pending. For a non-GM (only reached here at all when `allowPlayerSelfPublish` is on, see "Player
+ * self-publish" above) it's scoped to what they actually own, matching what their own "Publish to
+ * Web" click would actually touch -- otherwise the button could sit amber over someone else's
+ * pending work a player's own publish would never resolve.
+ *
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {string|null} A CSS color value, or `null` if nothing has ever been published at all
+ *   (leave default button styling alone).
+ */
 function syncButtonColor(lastSyncAtOverride) {
   const scoped = !game.user.isGM;
 
@@ -1416,6 +1537,10 @@ function syncButtonColor(lastSyncAtOverride) {
   return anyTouched ? COLOR_COMMITTED : null;
 }
 
+/**
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {void}
+ */
 function refreshSyncButtonColors(lastSyncAtOverride) {
   const color = syncButtonColor(lastSyncAtOverride) ?? "";
   // querySelectorAll, not querySelector -- if the directory happens to have
@@ -1429,11 +1554,14 @@ function refreshSyncButtonColors(lastSyncAtOverride) {
   }
 }
 
-/** Stamps lastSyncAt as now and refreshes every sync-related color on
- * screen using that exact value directly (see isPagePending()'s note on
- * why -- not by reading the setting back): both sync buttons, and every
- * currently-open journal sheet's per-page/header publish icons, for both
- * Dev Sync and a successful Publish to Web. */
+/**
+ * Stamps `lastSyncAt` as now and refreshes every sync-related color on screen using that exact
+ * value directly (see {@link isPagePending}'s note on why -- not by reading the setting back):
+ * both sync buttons, and every currently-open journal sheet's per-page/header publish icons, for
+ * both Dev Sync and a successful Publish to Web.
+ *
+ * @returns {Promise<void>}
+ */
 async function markSynced() {
   const now = Date.now();
   await game.settings.set(MODULE_ID, "lastSyncAt", now);
@@ -1442,12 +1570,18 @@ async function markSynced() {
   refreshAllOpenIndicators(now);
 }
 
-/** Header-control publish button -- used only for the popped-out
- * single-page editor (JournalEntryPageProseMirrorSheet), where the whole
- * window IS that one page, so "publish this window" is unambiguous. The
- * multi-page entry sheet uses per-page buttons instead (see
- * injectPagePublishButtons) -- a header button there read as acting on the
- * whole entry when it only ever affected whichever page was shown. */
+/**
+ * Header-control publish button -- used only for the popped-out single-page editor
+ * (`JournalEntryPageProseMirrorSheet`), where the whole window IS that one page, so "publish this
+ * window" is unambiguous. The multi-page entry sheet uses per-page buttons instead (see
+ * {@link injectPagePublishButtons}) -- a header button there read as acting on the whole entry
+ * when it only ever affected whichever page was shown.
+ *
+ * @param {object} app A Foundry native `ApplicationV2` instance.
+ * @param {HTMLElement} header The sheet's `.window-header` element to inject buttons into.
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {void}
+ */
 function injectPublishButton(app, header, lastSyncAtOverride) {
   const page = getCurrentPage(app);
   if (!canControlJournal(page?.parent)) return;
@@ -1517,12 +1651,19 @@ function injectPublishButton(app, header, lastSyncAtOverride) {
   else header.appendChild(button);
 }
 
-/** Per-page publish control, next to each page's own title in the entry
- * sheet's page-navigation list -- replaces the old passive status dot with
- * something actually clickable, right where it's unambiguous which page
- * it acts on. Always shown (including when clean), since the icon itself
- * already conveys the state the dot used to (checkmark vs. upload, plus
- * the same tooltip the header button used to show). */
+/**
+ * Per-page publish control, next to each page's own title in the entry sheet's page-navigation
+ * list -- replaces the old passive status dot with something actually clickable, right where it's
+ * unambiguous which page it acts on. Always shown (including when clean), since the icon itself
+ * already conveys the state the dot used to (checkmark vs. upload, plus the same tooltip the
+ * header button used to show).
+ *
+ * @param {HTMLElement} root The sheet's rendered root element.
+ * @param {JournalEntry} entry The Foundry native JournalEntry document whose pages to inject
+ *   buttons for.
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {void}
+ */
 function injectPagePublishButtons(root, entry, lastSyncAtOverride) {
   if (!canControlJournal(entry)) return;
 
@@ -1613,6 +1754,13 @@ function injectPagePublishButtons(root, entry, lastSyncAtOverride) {
   }
 }
 
+/**
+ * @param {object} app A Foundry native `ApplicationV2` instance (a journal entry sheet or a
+ *   popped-out page editor).
+ * @param {HTMLElement} [htmlEl] The sheet's rendered root element; falls back to `app.element`.
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {void}
+ */
 function refreshIndicators(app, htmlEl, lastSyncAtOverride) {
   const entry = getOwningEntry(app);
   if (!entry) return;
@@ -1642,11 +1790,15 @@ function refreshIndicators(app, htmlEl, lastSyncAtOverride) {
   refreshSyncButtonColors(lastSyncAtOverride);
 }
 
-/** Sweeps every currently-open journal entry/page sheet and refreshes its
- * indicators -- unlike the updateJournalEntryPage/updateJournalEntry hooks
- * below (which only touch sheets for the ONE entry that changed), a sync
- * (Publish to Web, Dev Sync) can affect every published page across every
- * entry at once, so every open sheet needs a nudge, not just one. */
+/**
+ * Sweeps every currently-open journal entry/page sheet and refreshes its indicators -- unlike the
+ * `updateJournalEntryPage`/`updateJournalEntry` hooks below (which only touch sheets for the ONE
+ * entry that changed), a sync (Publish to Web, Dev Sync) can affect every published page across
+ * every entry at once, so every open sheet needs a nudge, not just one.
+ *
+ * @param {number} [lastSyncAtOverride] See {@link isPagePending}.
+ * @returns {void}
+ */
 function refreshAllOpenIndicators(lastSyncAtOverride) {
   for (const app of foundry.applications.instances.values()) {
     const doc = app.document ?? app.object;

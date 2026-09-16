@@ -1,7 +1,9 @@
 // Run with: node --test foundry-module/scripts/ownership.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ownsSnapshot, scopedDeletionUuids } from "./ownership.js";
+import { scopedDeletionUuids, _test } from "./ownership.js";
+
+const { ownsSnapshot } = _test;
 
 const OWNER = 3; // matches CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER's real value
 

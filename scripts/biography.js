@@ -29,10 +29,15 @@ const BIOGRAPHY_EXTRACTORS = {
   },
 };
 
-/** "" (not null) on any miss -- matches the rest of this pipeline's
- * frontmatter convention of empty string over null/undefined for text
- * fields the site renders directly, and means callers never need a
- * separate null-check before deciding whether to show a bio section. */
+/**
+ * @param {Actor|null|undefined} actor The Foundry native Actor document to extract a biography
+ *   from, or a falsy value (no Actor to pull one from at all).
+ * @returns {string} Raw HTML, or `""` (never `null`/`undefined`) if `actor` was falsy, the current
+ *   game system has no registered extractor, or the extractor found/threw nothing -- matches the
+ *   rest of this pipeline's convention of `""` over `null`/`undefined` for text fields the site
+ *   renders directly, so callers never need a separate null-check before deciding whether to show
+ *   a bio section.
+ */
 export function extractBiography(actor) {
   if (!actor) return "";
   const extractor = BIOGRAPHY_EXTRACTORS[game.system?.id];
