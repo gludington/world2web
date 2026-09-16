@@ -74,6 +74,18 @@ jobs:
           cp lang/en.json release/lang/en.json
           cp scripts/*.js release/scripts/
 
+          # Bundled compendium pack (LevelDB files) and the images its journal pages
+          # reference via modules/world2web/assets/<file> -- both need to ship in the zip
+          # for the module to be self-contained on a fresh install, not just work here in
+          # this dev checkout. .gitkeep is repo-only bookkeeping (keeps the otherwise-empty
+          # pack directory trackable in git before Foundry ever populates it); dropped here
+          # since it has no meaning inside an actual LevelDB pack directory.
+          if [ -d assets ]; then cp -r assets release/assets; fi
+          if [ -d packs ]; then
+            cp -r packs release/packs
+            find release/packs -name .gitkeep -delete
+          fi
+
           ( cd release && zip -r ../module.zip . )
 
       - name: Create GitHub release
