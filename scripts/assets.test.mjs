@@ -1,16 +1,9 @@
 // Run with: node --test foundry-module/scripts/assets.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import {
-  extractImageSrcs,
-  rewriteImageSrcs,
-  collectAssetUrls,
-  rewriteAssetReferences,
-  guessExtension,
-  sha256Hex,
-  fetchAsset,
-  collectAssets,
-} from "./assets.js";
+import { rewriteAssetReferences, collectAssets, _test } from "./assets.js";
+
+const { extractImageSrcs, rewriteImageSrcs, collectAssetUrls, guessExtension, sha256Hex, fetchAsset } = _test;
 
 test("extractImageSrcs finds every <img src>, deduped", () => {
   const html = `<p><img src="a.png"> text <img src='b.jpg'/> <img src="a.png"></p>`;

@@ -1,7 +1,9 @@
 // Run with: node --test foundry-module/scripts/github.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { putFile, pushFiles, pushBinaryAssets, retractDeletedPost } from "./github.js";
+import { pushFiles, pushBinaryAssets, retractDeletedPost, _test } from "./github.js";
+
+const { putFile } = _test;
 
 function b64(str) {
   return Buffer.from(str, "utf-8").toString("base64");

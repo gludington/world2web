@@ -14,7 +14,7 @@
  *   to a single `-`, leading/trailing `-` trimmed. Never `null`/`undefined`/`""` -- `"untitled"` if
  *   `str` had no slug-able characters at all.
  */
-export function slugify(str) {
+function slugify(str) {
   const slug = String(str ?? "")
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
@@ -35,7 +35,7 @@ export function slugify(str) {
  *   {@link slugify}, an empty path is a legitimate "no root" result, not an error -- so this does
  *   NOT fall back to `"untitled"`).
  */
-export function slugifyPath(rawPath) {
+function slugifyPath(rawPath) {
   return String(rawPath ?? "")
     .split("/")
     .map((segment) => segment.trim())
@@ -66,7 +66,7 @@ export function slugifyPath(rawPath) {
  *   journal and post gains new `_slug`/`_authorSlug` properties; nothing is removed.
  * @returns {void}
  */
-export function assignSlugs(journals) {
+function assignSlugs(journals) {
   const seenJournalSlugs = new Map();
   for (const journal of journals) {
     const rootSlug = slugifyPath(journal.root);

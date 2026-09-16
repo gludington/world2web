@@ -129,7 +129,7 @@ async function putOnce({ owner, repo, path, content, message, token, branch, sha
  *   empty commit.
  * @throws {Error} If the final PUT (after the one retry above) still isn't OK.
  */
-export async function putFile({ owner, repo, path, content, message, token, branch }) {
+async function putFile({ owner, repo, path, content, message, token, branch }) {
   const existing = await getExistingFile({ owner, repo, path, token, branch });
   if (existing?.content === content) return null;
 
@@ -321,7 +321,7 @@ async function fileExists({ owner, repo, path, token, branch }) {
  *   if it already existed or a `409` was hit (see above).
  * @throws {Error} On any other non-OK response.
  */
-export async function putBinaryAssetIfMissing({ owner, repo, path, buffer, message, token, branch }) {
+async function putBinaryAssetIfMissing({ owner, repo, path, buffer, message, token, branch }) {
   if (await fileExists({ owner, repo, path, token, branch })) return null;
 
   const url = `${API_BASE}/repos/${owner}/${repo}/contents/${encodeURI(path)}`;
@@ -373,3 +373,7 @@ export async function pushBinaryAssets({ owner, repo, token, branch, files, comm
   }
   return pushed;
 }
+
+// Functions that only github.test.mjs needs to see -- not part of this module's real API
+// (pushFiles/pushBinaryAssets/retractDeletedPost above), never imported from anywhere else.
+export const _test = { putFile };

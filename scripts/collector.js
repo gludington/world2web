@@ -364,7 +364,7 @@ export function resolveDefaultRoot(entry) {
  *   result -- so this can still be `null` when there's no override and the entry isn't in a
  *   folder.
  */
-export function resolveRoot(entry) {
+function resolveRoot(entry) {
   const config = entry.flags?.[NS] ?? {};
   const override = config.root?.trim?.() || "";
   return override || resolveDefaultRoot(entry);
@@ -375,7 +375,7 @@ export function resolveRoot(entry) {
  * @returns {string[]} The entry's own tags, trimmed and with blanks dropped. Never
  *   `null`/`undefined`; `[]` if unset or empty.
  */
-export function resolveTags(entry) {
+function resolveTags(entry) {
   const tags = entry.flags?.[NS]?.tags;
   if (!Array.isArray(tags)) return [];
   return tags.map((t) => String(t).trim()).filter(Boolean);
@@ -433,7 +433,7 @@ const POST_ORDERS = new Set(["newest", "oldest", "manual"]);
  * @returns {"newest"|"oldest"|"manual"} Never `null`/`undefined`; falls back to `"manual"` for any
  *   unset or unrecognized value (unset, or bad input from outside the dialog).
  */
-export function resolvePostOrder(entry) {
+function resolvePostOrder(entry) {
   const order = entry.flags?.[NS]?.postOrder;
   return POST_ORDERS.has(order) ? order : "manual";
 }

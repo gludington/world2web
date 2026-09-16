@@ -22,7 +22,7 @@
  *   global dependency of its own.
  * @returns {boolean} Never `null`/`undefined`.
  */
-export function ownsSnapshot(ownership, userId, ownerLevel) {
+function ownsSnapshot(ownership, userId, ownerLevel) {
   return (ownership?.[userId] ?? ownership?.default ?? 0) >= ownerLevel;
 }
 
@@ -49,3 +49,7 @@ export function scopedDeletionUuids(pending, { scopedToCaller, userId, ownerLeve
     (uuid) => !scopedToCaller || ownsSnapshot(pending[uuid]?.ownership, userId, ownerLevel),
   );
 }
+
+// Functions that only ownership.test.mjs needs to see -- not part of this module's real API
+// (scopedDeletionUuids above), never imported from anywhere else.
+export const _test = { ownsSnapshot };

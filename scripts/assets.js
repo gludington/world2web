@@ -30,7 +30,7 @@ const IMG_SRC_RE = /<img\b[^>]*\bsrc=["']([^"']+)["']/gi;
  * @returns {string[]} Every distinct `<img src>` value found, in first-seen order. Never
  *   `null`/`undefined`; `[]` if `html` has no `<img>` tags.
  */
-export function extractImageSrcs(html) {
+function extractImageSrcs(html) {
   const srcs = new Set();
   for (const match of html.matchAll(IMG_SRC_RE)) srcs.add(match[1]);
   return [...srcs];
@@ -46,7 +46,7 @@ export function extractImageSrcs(html) {
  * @returns {string} Never `null`/`undefined`. Returns `html` unchanged (same reference) as a fast
  *   path when it contains no `<img>` at all.
  */
-export function rewriteImageSrcs(html, urlMap) {
+function rewriteImageSrcs(html, urlMap) {
   if (!html.includes("<img")) return html;
   return html.replace(IMG_SRC_RE, (full, src) => {
     const local = urlMap.get(src);
@@ -74,7 +74,7 @@ export function rewriteImageSrcs(html, urlMap) {
  * @returns {string[]} Every distinct referenced URL. Never `null`/`undefined`; `[]` if the payload
  *   has no published posts with images.
  */
-export function collectAssetUrls(payload) {
+function collectAssetUrls(payload) {
   const urls = new Set();
   for (const journal of payload.journals ?? []) {
     for (const post of journal.posts ?? []) {
@@ -132,7 +132,7 @@ const EXT_BY_CONTENT_TYPE = {
  * @returns {string} Never `null`/`undefined`; `"bin"` if neither `url` nor `contentType` yields a
  *   usable extension.
  */
-export function guessExtension(url, contentType) {
+function guessExtension(url, contentType) {
   const fromUrl = url.split("?")[0].split(".").pop()?.toLowerCase();
   if (fromUrl && /^[a-z0-9]{2,5}$/.test(fromUrl)) return fromUrl;
   return EXT_BY_CONTENT_TYPE[contentType] ?? "bin";
@@ -143,7 +143,7 @@ export function guessExtension(url, contentType) {
  * @returns {string} `buffer`'s bytes as lowercase hex. Never `null`/`undefined`; `""` if `buffer`
  *   is empty.
  */
-export function bufferToHex(buffer) {
+function bufferToHex(buffer) {
   return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -152,7 +152,7 @@ export function bufferToHex(buffer) {
  * @returns {Promise<string>} `buffer`'s SHA-256 digest as lowercase hex. Never
  *   `null`/`undefined`.
  */
-export async function sha256Hex(buffer) {
+async function sha256Hex(buffer) {
   return bufferToHex(await crypto.subtle.digest("SHA-256", buffer));
 }
 
@@ -179,7 +179,7 @@ const DATA_URI_RE = /^data:([^;,]*)(;base64)?,(.*)$/s;
  *   `""` (never `null`/`undefined`) if that header is missing.
  * @throws {Error} If a real (non-`data:`) fetch's response isn't OK (non-2xx).
  */
-export async function fetchAsset(url) {
+async function fetchAsset(url) {
   const dataUriMatch = url.match(DATA_URI_RE);
   if (dataUriMatch) {
     const [, contentType, isBase64, data] = dataUriMatch;
@@ -242,3 +242,14 @@ export async function collectAssets(payload) {
 
   return { urlMap, files };
 }
+
+// Functions that only assets.test.mjs needs to see -- not part of this module's real API
+// (collectAssets/rewriteAssetReferences above), never imported from anywhere else.
+export const _test = {
+  extractImageSrcs,
+  rewriteImageSrcs,
+  collectAssetUrls,
+  guessExtension,
+  sha256Hex,
+  fetchAsset,
+};
