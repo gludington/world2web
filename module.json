@@ -2,13 +2,22 @@
   "id": "world2web",
   "title": "World2Web",
   "description": "Publishes journal entries from Foundry to a static site. Any journal entry can be marked as publishable (author/root-path/tags configurable per entry, gear-icon dialog); individual pages are posts, published explicitly via a per-page publish button. 'Publish to Web' pushes directly to GitHub; an optional 'Enable Dev Mode' setting adds a 'Dev Sync' button that downloads the collected payload as JSON for local inspection instead.",
-  "version": "0.20.7",
+  "version": "0.20.8",
   "compatibility": {
     "minimum": "13",
     "verified": "14"
   },
   "esmodules": ["scripts/main.js"],
   "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],
+  "packs": [
+    {
+      "name": "documentation",
+      "label": "World2Web Documentation",
+      "path": "packs/documentation",
+      "type": "JournalEntry",
+      "ownership": { "PLAYER": "OBSERVER", "ASSISTANT": "OWNER" }
+    }
+  ],
   "authors": [{ "name": "gludington" }],
   "url": "https://github.com/gludington/world2web",
   "manifest": "https://github.com/gludington/world2web/releases/latest/download/module.json",
