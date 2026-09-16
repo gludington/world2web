@@ -59,7 +59,8 @@ Then in Foundry: **Setup → Manage Modules** (per world) → enable **World2Web
    context menu -- authors as that Actor instead, e.g. a GM writing in an NPC's voice; wins
    outright over the next option) or **Author name/image override** (freeform text, no biography,
    since there's no Actor to pull one from). See `scripts/biography.js` for the per-system
-   biography lookup -- only `dnd5e` is wired up right now, add more systems there as needed.
+   biography registry -- `dnd5e`, `pf2e`, and `daggerheart` are wired up so far, add more systems
+   there as needed.
 2. Write pages in that entry as usual. Once the entry itself is published, each page in the
    sidebar's page-navigation list gets its own small publish icon right next to its title.
    Clicking it does one of three things depending on state: **publish** it (if never published),
