@@ -701,10 +701,16 @@ function escapeHtml(str) {
  * actually own (Foundry's own `isOwner` getter, always correct for whichever client is asking),
  * and only once a GM has opted into that at all via the `allowPlayerSelfPublish` setting.
  *
+ * A compendium-sourced entry (`entry.pack` set) is never controllable regardless of who's asking
+ * -- only a world's own `game.journal` collection is ever collected/published
+ * (`collectJournalData()` in collector.js never looks at compendium content at all), so publish
+ * controls on a compendium document would be pure UI noise implying an action that does nothing.
+ *
  * @param {JournalEntry|null|undefined} entry The Foundry native JournalEntry document to check.
  * @returns {boolean} Never `null`/`undefined`.
  */
 function canControlJournal(entry) {
+  if (entry?.pack) return false;
   if (game.user.isGM) return true;
   if (!game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) return false;
   return !!entry?.isOwner;
