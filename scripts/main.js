@@ -366,19 +366,33 @@ async function retractPendingDeletions(config, { scopedToCaller = false } = {}) 
  * existing map rather than replacing it outright, so nothing from a prior publish is lost if this
  * one's payload doesn't happen to include it for some reason.
  *
+ * Also detects a *renamed* post: a journal or page title change (or a root-override change, or a
+ * new title collision that changes which posts get a UUID-suffix disambiguator) changes that
+ * post's computed slug, and therefore its file path, even though the underlying page/UUID hasn't
+ * changed at all. Nothing else in this pipeline would ever revisit the *old* path in that case --
+ * path disambiguation is entirely title/root-driven and this payload only ever describes the
+ * *current* state, so without this check a rename would leave the old content live on the site
+ * forever, duplicated alongside the new content at its new path, rather than replaced by it.
+ *
  * @param {object} payload A payload from `collectJournalData()` (see collector.js).
  * @param {string} worldSlug
- * @returns {Promise<void>}
+ * @returns {{uuid: string, oldPath: string}[]} Every post whose path changed since the last
+ *   publish (its previous path, to retract). `[]` if nothing was renamed.
  */
 async function recordPublishedPaths(payload, worldSlug) {
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
   const next = { ...paths };
+  const renamed = [];
   for (const journal of payload.journals ?? []) {
     for (const post of journal.posts ?? []) {
-      next[post.uuid] = `content/worlds/${worldSlug}/journals/${journal._slug}/${post._slug}.md`;
+      const newPath = `content/worlds/${worldSlug}/journals/${journal._slug}/${post._slug}.md`;
+      const oldPath = paths[post.uuid];
+      if (oldPath && oldPath !== newPath) renamed.push({ uuid: post.uuid, oldPath });
+      next[post.uuid] = newPath;
     }
   }
   await game.settings.set(MODULE_ID, "publishedPaths", next);
+  return renamed;
 }
 
 /**
@@ -494,7 +508,32 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // whether or not pushFiles actually wrote each one (an unchanged file
   // still needs its path tracked); a stale/never-pushed entry is harmless
   // either way -- retractDeletedPost treats a 404 as "already gone."
-  await recordPublishedPaths(payload, worldSlug);
+  const renamedPaths = await recordPublishedPaths(payload, worldSlug);
+
+  // A journal/page rename (or a root-override change) changes that post's
+  // computed slug and therefore its file path, even though the underlying
+  // page is still the exact same, still-published document -- pushFiles
+  // above already created the new file at the new path, but never touches
+  // the old one, so it would otherwise stay live on the site forever,
+  // duplicated alongside the new content. Retract each one the same way a
+  // genuinely deleted page is retracted -- expectedUuid guards against the
+  // same same-run-race retractDeletedPost's own doc comment describes.
+  let renamedRetractedCount = 0;
+  for (const { uuid, oldPath } of renamedPaths) {
+    try {
+      const ok = await retractDeletedPost({
+        owner: config.owner,
+        repo: config.repo,
+        token: config.token,
+        branch: config.branch,
+        path: oldPath,
+        expectedUuid: uuid,
+      });
+      if (ok) renamedRetractedCount += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Failed to retract renamed-away path ${oldPath}:`, err);
+    }
+  }
 
   // Confirms every currently-published page's local state (and any recent
   // unpublish) as reflected as of now -- even when total === 0, since that
@@ -503,11 +542,12 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // isPagePending()).
   await markSynced();
 
-  const total = pushed.length + pushedAssets.length + retractedCount;
+  const totalRetracted = retractedCount + renamedRetractedCount;
+  const total = pushed.length + pushedAssets.length + totalRetracted;
   ui.notifications.info(
     `${t("Notify.Prefix")}: ${
       total > 0
-        ? t("Notify.Published", { posts: pushed.length, assets: pushedAssets.length, retracted: retractedCount })
+        ? t("Notify.Published", { posts: pushed.length, assets: pushedAssets.length, retracted: totalRetracted })
         : t("Notify.UpToDate")
     }`,
   );
