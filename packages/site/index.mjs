@@ -9,8 +9,8 @@
 // Plain .mjs rather than TypeScript: Astro loads integrations through Node
 // directly, and Node refuses to strip types from files under node_modules.
 // The .astro/.ts files under src/ are fine -- Vite compiles those.
-import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { extname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** Every page this package provides, as [URL pattern, file under src/pages/]. */
@@ -66,15 +66,54 @@ async function buildSearchIndex(siteDir, logger) {
   }
 }
 
+const PAGEFIND_CONTENT_TYPES = {
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".wasm": "application/wasm",
+};
+
+/**
+ * Dev-server middleware serving the last build's search index at /pagefind/. Pagefind can only
+ * index built HTML, so `astro dev` has no index of its own; after an `astro build`, this lets
+ * search work in dev too, against the content as of that build. Everything else still hot-reloads
+ * as usual. Without a build, /pagefind/ requests fall through and search shows nothing, as before.
+ */
+function servePagefindFromBuild(pagefindDir) {
+  return (req, res, next) => {
+    const url = (req.url ?? "").split("?")[0];
+    if (!url.startsWith("/pagefind/")) return next();
+    const file = normalize(join(pagefindDir, decodeURIComponent(url.slice("/pagefind/".length))));
+    // Stay inside the index directory, whatever the URL says.
+    if (!file.startsWith(pagefindDir + sep) || !existsSync(file) || !statSync(file).isFile()) return next();
+    res.setHeader("Content-Type", PAGEFIND_CONTENT_TYPES[extname(file)] ?? "application/octet-stream");
+    res.setHeader("Cache-Control", "no-store");
+    createReadStream(file).pipe(res);
+  };
+}
+
 /**
  * @param {object} [options] Reserved for future site options; none yet.
  * @returns {import("astro").AstroIntegration}
  */
 export default function world2web(options = {}) {
   void options;
+  let outDir;
   return {
     name: "@world2web/site",
     hooks: {
+      "astro:config:done": ({ config }) => {
+        outDir = fileURLToPath(config.outDir);
+      },
+
+      "astro:server:setup": ({ server, logger }) => {
+        const pagefindDir = normalize(join(outDir, "pagefind"));
+        server.middlewares.use(servePagefindFromBuild(pagefindDir));
+        if (existsSync(pagefindDir)) {
+          logger.info("Search uses the index from your last build. Rebuild to refresh it.");
+        }
+      },
+
       "astro:config:setup": ({ config, injectRoute, updateConfig }) => {
         for (const [pattern, file] of ROUTES) {
           injectRoute({ pattern, entrypoint: new URL(`./src/pages/${file}`, import.meta.url) });

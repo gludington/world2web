@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
+    "dev:search": "astro build && astro dev",
     "build": "astro build",
     "preview": "astro preview",
     "ingest": "world2web-ingest"

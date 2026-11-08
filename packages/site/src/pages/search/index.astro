@@ -26,14 +26,34 @@ const siteName = getSiteConfig().siteName;
   <pagefind-summary default-message="Type to search across every world."></pagefind-summary>
 
   <!-- Shown only if pagefind-component-ui.js never registers its custom
-       elements (see the timeout race in the script below) -- i.e. this is
-       a dev/preview build that ran `astro build` without also running
-       `pagefind --site dist`. See README.md's "Search" section for the
-       local command that generates it. -->
-  <p id="search-fallback" class="empty-state" hidden>
-    Search isn't built in this preview. See the site repo's README.md ("Search") for the local
-    build command that generates it.
-  </p>
+       elements (see the timeout race in the script below), i.e. there's no
+       search index to load. A real build always has one (the integration's
+       build:done hook writes it); `astro dev` only has one if it can serve
+       the index from an earlier build (index.mjs, servePagefindFromBuild).
+       Only ever seen while previewing locally, never on a deployed site. -->
+  <div id="search-fallback" class="empty-state" hidden>
+    <p>
+      <strong>Search isn't available in this preview.</strong> The search index is generated from
+      the finished site after a full build, so it doesn't exist while the dev server is rendering
+      pages on the fly. Your published site always has it.
+    </p>
+    <p>
+      To use search while previewing, run <code>pnpm site:dev:search</code> (in a site repo:
+      <code>npm run dev:search</code>). It builds the site once, then the dev server uses that
+      build's index.
+    </p>
+    <p>Limitations:</p>
+    <ul>
+      <li>
+        Results reflect your content as of that build. New or edited posts won't show up in search
+        until you run it again (they still appear everywhere else right away).
+      </li>
+      <li>
+        Only posts and author pages are searchable. Listing pages (journals, tags, the homepage)
+        aren't indexed, since they'd only repeat the posts.
+      </li>
+    </ul>
+  </div>
 
   <div class="search-layout">
     <aside class="search-filters">
