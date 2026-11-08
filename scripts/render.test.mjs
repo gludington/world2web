@@ -1,7 +1,7 @@
 // Run with: node --test foundry-module/scripts/render.test.mjs
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renderPayloadToFiles, buildSiteConfigFile } from "./render.js";
+import { renderPayloadToFiles, buildSiteConfigFile, buildWorldConfigFile } from "./render.js";
 
 function samplePayload(overrides = {}) {
   return {
@@ -287,4 +287,13 @@ test("frontmatter carries the journal's homepage mode, defaulting to 'none'", ()
   const bogus = samplePayload();
   bogus.journals[0].homepage = "sideways";
   assert.match(renderPayloadToFiles(bogus).files[0].content, /"homepage": "none"/);
+});
+
+test("buildWorldConfigFile writes the world's own Homepage Links into its own folder", () => {
+  const links = [{ label: "Discord", href: "https://discord.gg/abc" }];
+  const file = buildWorldConfigFile("curse-of-strahd", { homepageLinks: links });
+  assert.equal(file.path, "content/worlds/curse-of-strahd/world-config.json");
+  assert.deepEqual(JSON.parse(file.content), { homepageLinks: links });
+  assert.ok(file.content.endsWith("}\n"));
+  assert.deepEqual(JSON.parse(buildWorldConfigFile("w").content), { homepageLinks: [] });
 });

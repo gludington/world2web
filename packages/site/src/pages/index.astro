@@ -4,6 +4,7 @@ import { getSiteConfig } from "../lib/config";
 import { getPublishedPosts } from "../lib/posts";
 import { worldIndexRoute, worldLabel } from "../lib/routes";
 import WorldIndex from "../components/WorldIndex.astro";
+import HomepageLinks from "../components/HomepageLinks.astro";
 
 // Single-world vs. multi-world sites shouldn't look the same: with exactly
 // one world, a "pick a world" step in front of it is a pointless extra
@@ -52,4 +53,7 @@ const worlds = [...new Set(posts.map((post) => post.data.world))].sort();
       </section>
     )
   }
+  {/* One world: the homepage is that world's home page, so its own links.
+      Several: the world picker, so every world's links combined. */}
+  <HomepageLinks slot="footer" worlds={worlds} />
 </Layout>

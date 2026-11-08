@@ -6,8 +6,10 @@ import {
   resolveDefaultAuthor,
   resolveJournalAuthor,
   resolveDefaultRoot,
+  checkHomepageLink,
+  MAX_HOMEPAGE_LINKS,
 } from "./collector.js";
-import { renderPayloadToFiles, buildSiteConfigFile } from "./render.js";
+import { renderPayloadToFiles, buildSiteConfigFile, buildWorldConfigFile } from "./render.js";
 import { pushFiles, pushBinaryAssets, retractDeletedPost, readRepoFile, checkRepoAccess } from "./github.js";
 import { planSitePin, isSiteVersionPublished } from "./site-version.js";
 import { collectAssets, rewriteAssetReferences } from "./assets.js";
@@ -273,6 +275,36 @@ Hooks.once("init", () => {
     default: "World2Web",
   });
 
+  // Links in a footer on the site's home pages -- e.g. a module's install
+  // manifest, a Discord invite. Stored as a list of {label, href}; edited
+  // through the "Homepage Links" menu button (openHomepageLinksDialog), not
+  // a text box, so there's no format to get wrong. collector.js's
+  // normalizeHomepageLinks() is what reaches the site.
+  game.settings.register(MODULE_ID, "homepageLinks", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: [],
+  });
+
+  class HomepageLinksMenu extends foundry.applications.api.ApplicationV2 {
+    static DEFAULT_OPTIONS = { id: "world2web-homepage-links-menu" };
+
+    async render(...args) {
+      await openHomepageLinksDialog();
+      return this;
+    }
+  }
+
+  game.settings.registerMenu(MODULE_ID, "homepageLinksMenu", {
+    name: "WORLD2WEB.Settings.HomepageLinks.Name",
+    label: "WORLD2WEB.Settings.HomepageLinks.Label",
+    hint: "WORLD2WEB.Settings.HomepageLinks.Hint",
+    icon: "fa-solid fa-link",
+    type: HomepageLinksMenu,
+    restricted: true,
+  });
+
   game.settings.register(MODULE_ID, "journalsSegment", {
     name: "WORLD2WEB.Settings.JournalsSegment.Name",
     hint: "WORLD2WEB.Settings.JournalsSegment.Hint",
@@ -482,11 +514,10 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   });
 
   const { worldSlug, files } = renderPayloadToFiles(payload);
-  const theme = game.settings.get(MODULE_ID, "siteTheme");
-  const siteName = game.settings.get(MODULE_ID, "siteName");
-  const journalsSegment = game.settings.get(MODULE_ID, "journalsSegment");
-  const allowThemeOverride = game.settings.get(MODULE_ID, "allowThemeOverride");
-  files.push(buildSiteConfigFile({ theme, siteName, journalsSegment, allowThemeOverride }));
+  // The same site settings Dev Sync downloads (collector.js's
+  // collectSiteConfig), so the two paths can't drift apart.
+  files.push(buildSiteConfigFile(payload.siteConfig));
+  files.push(buildWorldConfigFile(worldSlug, payload.worldConfig));
 
   // Pushed last, so the host's final rebuild of this publish already has
   // every new post in it.
@@ -602,6 +633,123 @@ async function planSitePinFile(config) {
     console.warn(`${MODULE_ID} | Couldn't check the site's package version; skipping.`, err);
     return null;
   }
+}
+
+/**
+ * One editable row of the Homepage Links dialog.
+ *
+ * @param {{label?: string, href?: string}} [row]
+ * @returns {string} HTML.
+ */
+function homepageLinkRowHtml(row = {}) {
+  return `
+    <div class="w2w-link-row" style="display:flex; gap:0.5rem; align-items:center; margin-bottom:0.4rem;">
+      <input type="text" class="w2w-link-label" placeholder="${escapeHtml(t("Dialog.HomepageLinksNamePlaceholder"))}"
+             value="${escapeHtml(row.label ?? "")}" style="flex:1 1 35%;">
+      <input type="text" class="w2w-link-href" placeholder="https://..."
+             value="${escapeHtml(row.href ?? "")}" style="flex:1 1 65%;">
+      <button type="button" class="w2w-link-remove" title="${escapeHtml(t("Dialog.HomepageLinksRemove"))}"
+              aria-label="${escapeHtml(t("Dialog.HomepageLinksRemove"))}" style="flex:0 0 auto; width:auto;">
+        <i class="fa-solid fa-trash"></i>
+      </button>
+    </div>`;
+}
+
+/**
+ * Editor for the Homepage Links setting: one row per link (name + address), with buttons to add
+ * and remove rows. Opened from the "Homepage Links" button in Configure Settings. Invalid
+ * addresses are reported rather than silently dropped: the dialog reopens with every row as
+ * typed, so nothing has to be retyped.
+ *
+ * DialogV2.wait() has no hook for wiring up the add/remove buttons, so a one-time
+ * renderDialogV2 listener does it, matched by this dialog's own id.
+ *
+ * @param {{label?: string, href?: string}[]} [rows] Rows to show; defaults to the saved links.
+ * @param {string|null} [errorMessage] Shown above the rows after a failed save.
+ * @returns {Promise<void>}
+ */
+async function openHomepageLinksDialog(rows = null, errorMessage = null) {
+  const DIALOG_ID = "world2web-homepage-links";
+  // Anything but a list (e.g. a value saved by a pre-release text-box
+  // version of this setting) starts the editor empty rather than failing.
+  const stored = game.settings.get(MODULE_ID, "homepageLinks");
+  const initial = rows ?? (Array.isArray(stored) ? stored : []);
+  const shown = initial.length ? initial : [{}];
+
+  const content = `
+    <p>${t("Dialog.HomepageLinksIntro")}</p>
+    ${errorMessage ? `<p class="notification error">${errorMessage}</p>` : ""}
+    <div class="w2w-link-rows">${shown.map((row) => homepageLinkRowHtml(row)).join("")}</div>
+    <button type="button" class="w2w-link-add" style="width:auto;">
+      <i class="fa-solid fa-plus"></i> ${t("Dialog.HomepageLinksAdd")}
+    </button>
+  `;
+
+  const hookId = Hooks.on("renderDialogV2", (app, element) => {
+    if (app.id !== DIALOG_ID) return;
+    Hooks.off("renderDialogV2", hookId);
+    const root = element instanceof HTMLElement ? element : element?.[0];
+    const list = root?.querySelector(".w2w-link-rows");
+    if (!list) return;
+    const addButton = root.querySelector(".w2w-link-add");
+    const syncAddButton = () => {
+      addButton.disabled = list.querySelectorAll(".w2w-link-row").length >= MAX_HOMEPAGE_LINKS;
+    };
+    addButton.addEventListener("click", () => {
+      list.insertAdjacentHTML("beforeend", homepageLinkRowHtml());
+      list.lastElementChild?.querySelector(".w2w-link-label")?.focus();
+      syncAddButton();
+    });
+    list.addEventListener("click", (event) => {
+      const remove = event.target.closest(".w2w-link-remove");
+      if (!remove) return;
+      const row = remove.closest(".w2w-link-row");
+      // Keep one (empty) row, so there's always somewhere to type.
+      if (list.querySelectorAll(".w2w-link-row").length > 1) row.remove();
+      else row.querySelectorAll("input").forEach((input) => (input.value = ""));
+      syncAddButton();
+    });
+    syncAddButton();
+  });
+
+  const result = await foundry.applications.api.DialogV2.wait({
+    id: DIALOG_ID,
+    window: { title: t("Dialog.HomepageLinksTitle") },
+    position: { width: 560 },
+    content,
+    buttons: [
+      {
+        action: "save",
+        label: "WORLD2WEB.Dialog.Save",
+        icon: "fa-solid fa-check",
+        default: true,
+        callback: (event, button) =>
+          [...button.form.querySelectorAll(".w2w-link-row")].map((row) => ({
+            label: row.querySelector(".w2w-link-label").value,
+            href: row.querySelector(".w2w-link-href").value,
+          })),
+      },
+      { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
+    ],
+    rejectClose: false,
+  });
+  Hooks.off("renderDialogV2", hookId); // in case the dialog never rendered
+  if (!Array.isArray(result)) return; // cancelled or closed
+
+  const links = [];
+  const invalid = [];
+  for (const row of result) {
+    const checked = checkHomepageLink(row);
+    if (checked.ok) links.push(checked.link);
+    else if (checked.reason === "invalid") invalid.push(row.label?.trim() || row.href?.trim());
+  }
+  if (invalid.length) {
+    const names = invalid.map((name) => `<strong>${escapeHtml(name)}</strong>`).join(", ");
+    return openHomepageLinksDialog(result, t("Dialog.HomepageLinksInvalid", { names }));
+  }
+
+  await game.settings.set(MODULE_ID, "homepageLinks", links.slice(0, MAX_HOMEPAGE_LINKS));
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.HomepageLinksSaved", { count: links.length })}`);
 }
 
 Hooks.once("ready", () => {

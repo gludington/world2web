@@ -221,6 +221,20 @@ async function main() {
     )}\n`,
   );
 
+  // content/worlds/<world>/world-config.json: this world's own settings
+  // (Homepage Links), in its own folder so worlds sharing a site don't
+  // overwrite each other's -- the same file the module's Publish to Web
+  // writes (render.js's buildWorldConfigFile).
+  const worldConfig = payload.worldConfig ?? {};
+  await writeFile(
+    path.join(contentDir, "worlds", worldSlug, "world-config.json"),
+    `${JSON.stringify(
+      { homepageLinks: Array.isArray(worldConfig.homepageLinks) ? worldConfig.homepageLinks : [] },
+      null,
+      2,
+    )}\n`,
+  );
+
   console.log(`world2web ingest: wrote ${postCount} post(s) across ${journals.length} journal(s) to ${journalsDir}`);
 }
 

@@ -595,6 +595,67 @@ function collectSiteConfig() {
 }
 
 /**
+ * This world's own site settings -- unlike {@link collectSiteConfig}'s, which every world
+ * publishing to a site shares (one site-config.json, last publish wins), these are written to the
+ * world's own folder (content/worlds/<world>/world-config.json), so worlds sharing a site can't
+ * overwrite each other's. Currently just the Homepage Links: shown on this world's home page, and
+ * combined with every other world's on a multi-world site's main homepage.
+ *
+ * @returns {{homepageLinks: {label: string, href: string}[]}} Never `null`/`undefined`.
+ */
+function collectWorldConfig() {
+  return {
+    homepageLinks: normalizeHomepageLinks(game.settings.get(NS, "homepageLinks")),
+  };
+}
+
+/** Most homepage links kept; anything past this is dropped. */
+export const MAX_HOMEPAGE_LINKS = 10;
+
+/**
+ * Checks one row from the Homepage Links editor (main.js). The link must be an http(s) address,
+ * so a typo can't become a broken or unsafe link on the site; a missing name falls back to the
+ * address itself. Leading/trailing spaces are ignored.
+ *
+ * @param {{label?: string, href?: string}} row
+ * @returns {{ok: true, link: {label: string, href: string}} | {ok: false, reason: "empty"|"invalid"}}
+ *   `"empty"` for a row with neither a name nor a link (just skipped), `"invalid"` when the link
+ *   isn't a full http(s) address.
+ */
+export function checkHomepageLink(row) {
+  const label = String(row?.label ?? "").trim();
+  const href = String(row?.href ?? "").trim();
+  if (!label && !href) return { ok: false, reason: "empty" };
+  let url;
+  try {
+    url = new URL(href);
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return { ok: false, reason: "invalid" };
+  return { ok: true, link: { label: label || url.href, href: url.href } };
+}
+
+/**
+ * The stored Homepage Links setting, reduced to valid links -- what the site gets. The editor
+ * already refuses to save invalid rows; this guards against anything else in the stored value.
+ *
+ * @param {unknown} value The setting's stored value: an array of `{label, href}`.
+ * @returns {{label: string, href: string}[]} Never `null`/`undefined`; at most
+ *   {@link MAX_HOMEPAGE_LINKS} links.
+ */
+export function normalizeHomepageLinks(value) {
+  if (!Array.isArray(value)) return [];
+  const links = [];
+  for (const row of value) {
+    const checked = checkHomepageLink(row);
+    if (checked.ok) links.push(checked.link);
+    if (links.length >= MAX_HOMEPAGE_LINKS) break;
+  }
+  return links;
+}
+
+/**
  * Collects every published journal entry (see the "Publishing Settings" dialog in main.js) as a
  * {@link Journal} with its published pages as posts, and returns a JSON-serializable payload.
  * Read-only: touches nothing.
@@ -607,7 +668,8 @@ function collectSiteConfig() {
  *   parameter resolved against a raw ownership map, since this only ever needs "does the browser
  *   calling this own it," without reimplementing Foundry's own permission-inheritance rules.
  * @returns {{generatedAt: string, world: {id: string, title: string}, foundryVersion: string,
- *   collectorVersion: string|null, siteConfig: object, journalCount: number, journals: Journal[]}}
+ *   collectorVersion: string|null, siteConfig: object, worldConfig: object, journalCount: number,
+ *   journals: Journal[]}}
  *   The full collected payload. Never `null`/`undefined`. `journals` is `[]` if nothing qualifies
  *   (nothing published at all, or -- when scoped -- the calling user owns nothing published).
  *   `collectorVersion` is `null` only if this module's own version can't be looked up.
@@ -623,6 +685,7 @@ export function collectJournalData({ scopedToCaller = false } = {}) {
     foundryVersion: game.version,
     collectorVersion: game.modules.get(NS)?.version ?? null,
     siteConfig: collectSiteConfig(),
+    worldConfig: collectWorldConfig(),
     journalCount: journals.length,
     journals,
   };

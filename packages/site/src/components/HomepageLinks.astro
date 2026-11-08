@@ -1,0 +1,63 @@
+---
+// A footer of links from the World2Web module's "Homepage Links" setting
+// (Configure Settings in Foundry) -- for example an install manifest or a
+// Discord invite -- shown as one pipe-separated line at the bottom of the
+// site's home pages only: the homepage, /worlds/, and each world's index
+// page. Renders nothing when there are no links.
+//
+// Each world has its own links (that world's Homepage Links setting). A
+// world's home page shows its own; a multi-world site's main homepage and
+// /worlds/ show every world's combined, without duplicates -- see
+// lib/config.ts's getHomepageLinks.
+//
+// Usage: <HomepageLinks slot="footer" worlds={[...]} /> inside <Layout>.
+import { getHomepageLinks } from "../lib/config";
+
+interface Props {
+  /** The worlds whose links to show: one for a world's home page, all of them for the
+   * multi-world homepage and /worlds/. */
+  worlds: string[];
+}
+
+const homepageLinks = getHomepageLinks(Astro.props.worlds);
+---
+
+{
+  homepageLinks.length > 0 && (
+    <footer class="homepage-links">
+      {homepageLinks.map((link, i) => (
+        <>
+          {i > 0 && <span class="homepage-links__sep" aria-hidden="true">|</span>}
+          <a href={link.href} target="_blank" rel="noopener noreferrer">{link.label}</a>
+        </>
+      ))}
+    </footer>
+  )
+}
+
+<style>
+  .homepage-links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: baseline;
+    gap: 0.25rem 0.75rem;
+    margin-top: 4rem;
+    padding: 1.25rem 0 1.5rem;
+    border-top: 1px solid var(--color-border);
+    color: var(--color-text-muted);
+  }
+  .homepage-links a {
+    color: var(--color-accent);
+    text-decoration: none;
+  }
+  .homepage-links a:hover,
+  .homepage-links a:focus-visible {
+    color: var(--color-text-main);
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+  .homepage-links__sep {
+    color: var(--color-text-muted);
+  }
+</style>

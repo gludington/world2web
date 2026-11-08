@@ -4,6 +4,7 @@ import { getSiteConfig } from "../../../lib/config";
 import { getPublishedPosts } from "../../../lib/posts";
 import { worldLabel } from "../../../lib/routes";
 import WorldIndex from "../../../components/WorldIndex.astro";
+import HomepageLinks from "../../../components/HomepageLinks.astro";
 import Breadcrumbs from "../../../components/Breadcrumbs.astro";
 
 // Always generated, one per world with any published content, regardless
@@ -34,4 +35,5 @@ const siteName = getSiteConfig().siteName;
     currentLabel={worldLabel(world)}/>
   <h1>{worldLabel(world)}</h1>
   <WorldIndex world={world} />
+  <HomepageLinks slot="footer" worlds={[world]} />
 </Layout>

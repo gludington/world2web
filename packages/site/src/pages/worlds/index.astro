@@ -1,5 +1,6 @@
 ---
 import Breadcrumbs from "../../components/Breadcrumbs.astro";
+import HomepageLinks from "../../components/HomepageLinks.astro";
 import Layout from "../../layouts/Layout.astro";
 import { getSiteConfig } from "../../lib/config";
 import { getPublishedPosts } from "../../lib/posts";
@@ -32,4 +33,5 @@ const worlds = [...new Set(posts.map((post) => post.data.world))].sort();
       </ul>
     )
   }
+  <HomepageLinks slot="footer" worlds={worlds} />
 </Layout>

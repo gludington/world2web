@@ -57,7 +57,8 @@ they own, and their posts appear under their character's name and portrait.
 
 A chronological list of posts on the homepage, a page per journal, per-author and per-tag archives,
 sections that follow your Foundry folder structure, full-text search, links between posts (Foundry
-`@UUID` links become real links), and a choice of built-in themes.
+`@UUID` links become real links), a choice of built-in themes, and optional homepage links (a
+Discord invite, a wiki) set in the module settings.
 
 ## How your site stays up to date
 

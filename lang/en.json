@@ -46,6 +46,11 @@
         "Name": "Site Name",
         "Hint": "Replaces \"World2Web\" as the site's name/branding (page title, homepage heading, breadcrumbs)."
       },
+      "HomepageLinks": {
+        "Name": "Homepage Links",
+        "Label": "Edit Links",
+        "Hint": "Links shown in a footer on this world's home page -- for example an install link or a Discord invite. On a site several worlds publish to, the main homepage shows every world's links combined. Take effect on the next Publish to Web."
+      },
       "JournalsSegment": {
         "Name": "Journals URL Segment",
         "Hint": "The URL segment for journals on the site, e.g. yoursite.com/<world>/<this>/<journal>/. Gets slugified automatically, so spaces/capitals are fine to type here. Defaults to \"journals\"."
@@ -67,7 +72,8 @@
       "NoCurrentPage": "couldn't determine which page to publish -- see console.",
       "PostSettingsSaved": "post settings saved for \"{name}\".",
       "DeploySiteSaved": "connected to GitHub and saved. Mark a journal as published, publish a page, then click Publish to Web.",
-      "SiteUpdated": "your site is being updated to World2Web site version {version}."
+      "SiteUpdated": "your site is being updated to World2Web site version {version}.",
+      "HomepageLinksSaved": "saved {count} homepage link(s). They'll appear on your site after the next Publish to Web."
     },
     "Button": {
       "DevSync": "Dev Sync",
@@ -148,7 +154,13 @@
         "branch-not-found": "<strong>{owner}/{repo}</strong> has no branch named \"{branch}\". If your host just created the repo, wait a minute and try again; otherwise change the GitHub Branch setting.",
         "network": "Couldn't reach GitHub. Check your connection, or use Save Anyway to skip this check.",
         "unexpected": "GitHub returned an unexpected response ({status}). Try again, or use Save Anyway to skip this check."
-      }
+      },
+      "HomepageLinksTitle": "Homepage Links",
+      "HomepageLinksIntro": "Shown in a footer on this world's home page, in this order. If other worlds publish to the same site, the main homepage combines all their links. Each link needs a full address starting with https://.",
+      "HomepageLinksNamePlaceholder": "Name, e.g. Discord",
+      "HomepageLinksAdd": "Add link",
+      "HomepageLinksRemove": "Remove this link",
+      "HomepageLinksInvalid": "These need a full web address starting with https:// (or http://): {names}. Fix or remove them, then save again."
     }
   }
 }
