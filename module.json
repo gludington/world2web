@@ -18,6 +18,7 @@
       "ownership": { "PLAYER": "OBSERVER", "ASSISTANT": "OWNER" }
     }
   ],
+  "license": "LICENSE",
   "authors": [{ "name": "gludington" }],
   "url": "https://world2web.loodingdongs.com",
   "readme": "https://github.com/gludington/world2web#readme",

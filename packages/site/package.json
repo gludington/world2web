@@ -3,7 +3,7 @@
   "version": "0.21.0",
   "description": "The World2Web campaign site, as an Astro integration. Renders journals published from Foundry VTT by the World2Web module.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "keywords": [
     "astro-integration",
     "astro-component",
@@ -23,6 +23,7 @@
     "world2web-ingest": "./scripts/ingest.js"
   },
   "files": [
+    "LICENSE",
     "index.mjs",
     "src",
     "scripts"

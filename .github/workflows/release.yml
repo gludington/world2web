@@ -92,6 +92,7 @@ jobs:
           jq --arg dl "https://github.com/${repo}/releases/download/v${version}/module.zip" \
              '.download = $dl' module.json > release/module.json
           cp README.md release/README.md
+          cp LICENSE release/LICENSE
           cp lang/en.json release/lang/en.json
           cp scripts/*.js release/scripts/
 
