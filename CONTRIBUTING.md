@@ -137,12 +137,24 @@ A version number can only be used once on npm, even after unpublishing. A broken
 with a new patch release, never by re-publishing, which is one more reason to test on a real host
 with preview builds rather than test releases.
 
-### One-time npm setup
+### npm publishing
 
-- An npm organization named `world2web` owns the `@world2web` scope (npmjs.com → Add
-  Organization; free for public packages).
-- A granular npm access token with publish rights for `@world2web`, stored in this repo's GitHub
-  secrets as `NPM_TOKEN`.
+The release workflow publishes with npm **trusted publishing**: npm accepts publishes of
+`@world2web/site` from this repo's `release.yml`, proven by GitHub's OIDC token. No npm token is
+stored anywhere. (Write tokens now expire after 90 days at most, which would break releases
+periodically.) Requirements, all already in the workflow: `id-token: write`, Node 22.14+, npm
+11.5.1+, and `repository.url` in `packages/site/package.json` matching this repo.
+
+One-time setup, already done once for this repo:
+
+- An npm account with 2FA, owning the npm organization `world2web` (the `@world2web` scope).
+- `@world2web/site` published once by hand, since trusted publishing is configured on an existing
+  package's settings page.
+- On npmjs.com, the package's **Settings → Trusted Publisher**: GitHub Actions, user
+  `gludington`, repository `world2web`, workflow `release.yml`. A new trusted publisher expires
+  if it isn't used for a publish within 2 days, so set it up right before a release.
+- **Settings → Publishing access**: require 2FA and disallow tokens. Trusted publishing isn't
+  affected.
 
 ## Working on the site package
 
