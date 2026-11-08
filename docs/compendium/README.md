@@ -24,6 +24,9 @@ where the pages are edited and published; these files are the source you paste i
    the Troubleshooting page: drag the page in, or write `@UUID[.<its page id>]`. Keep links in the
    **relative** form `@UUID[.<id>]` (a dot, then the page ID). Only that form works both in the
    world and in the compendium copy; the module expands it to a full link when publishing.
+   Write it as `@UUID[.YJgINFmlwzaLHjbo]{Module Setup}`, just the target page's ID after the
+   dot. **Not** `@UUID[.JournalEntryPage.YJgINFmlwzaLHjbo]`: Foundry reads that as something inside
+   the current page, so it shows as a broken link. Links only work in view mode, not while editing.
    Afterwards, record the new pages' IDs in the table above.
 4. Retake any screenshots whose UI has changed (they live in `assets/`, referenced as
    `modules/world2web/assets/<file>`).

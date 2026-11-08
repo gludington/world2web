@@ -1121,11 +1121,13 @@ test("resolveRelativeUuids: a sibling-page link (.pageId) becomes an absolute pa
   );
 });
 
-test("resolveRelativeUuids: an even-part relative link resolves against the root journal", async () => {
+test("resolveRelativeUuids: an even-part relative link resolves against the page itself, as Foundry does", async () => {
   const { resolveRelativeUuids } = await import("./collector.js");
+  // Foundry reads this as something embedded in page p1 (so it's a broken
+  // link there); the site has to agree rather than turn it into a link to p2.
   assert.equal(
     resolveRelativeUuids("@UUID[.JournalEntryPage.p2]", "JournalEntry.abc.JournalEntryPage.p1"),
-    "@UUID[JournalEntry.abc.JournalEntryPage.p2]",
+    "@UUID[JournalEntry.abc.JournalEntryPage.p1.JournalEntryPage.p2]",
   );
 });
 

@@ -197,11 +197,14 @@ const RELATIVE_UUID_ENRICHER_RE = /@UUID\[\.([^\]]+)\]/g;
  * world entry and its compendium copy (an absolute `JournalEntry.<id>...` breaks once the entry is
  * exported to a pack, where its ID and UUID prefix both change).
  *
- * Mirrors Foundry's own `_resolveRelativeUuid` rules, applied to a page:
+ * Mirrors Foundry's own `_resolveRelativeUuid` (common/utils/helpers.mjs), which Foundry calls
+ * with the page itself as the document to resolve against when it displays a text page:
  *  - odd number of parts (`.<pageId>`, or `.<pageId>.<Type>.<id>`): the first part is a sibling
- *    page's ID -- `<journalUuid>.JournalEntryPage.<parts>`.
- *  - even number of parts (`.<Type>.<id>`): an explicit child of the root document --
- *    `<journalUuid>.<parts>`.
+ *    page's ID -- `<journalUuid>.JournalEntryPage.<parts>`. This is the form Foundry writes for a
+ *    link to another page of the same journal.
+ *  - even number of parts (`.<Type>.<id>`): a document embedded in *this page* --
+ *    `<pageUuid>.<parts>`. (Not a sibling page: `.JournalEntryPage.<id>` is a broken link in
+ *    Foundry, and it should be just as broken on the site, not silently work.)
  *
  * @param {string} html The raw HTML to process.
  * @param {string} pageUuid The UUID of the page this HTML belongs to.
@@ -220,7 +223,7 @@ export function resolveRelativeUuids(html, pageUuid) {
     if (!parts.length) return full;
     const absolute =
       parts.length % 2 === 0
-        ? `${journalUuid}.${parts.join(".")}`
+        ? `${pageUuid}.${parts.join(".")}`
         : `${journalUuid}.JournalEntryPage.${parts.join(".")}`;
     return `@UUID[${absolute}]`;
   });
