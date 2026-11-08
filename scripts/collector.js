@@ -185,10 +185,50 @@ function resolveImageSrcsInHtml(html) {
   });
 }
 
+const RELATIVE_UUID_ENRICHER_RE = /@UUID\[\.([^\]]+)\]/g;
+
+/**
+ * Expands Foundry's relative `@UUID[.<...>]` enrichers into absolute UUIDs, so the site's own link
+ * resolver (`resolveContentLinks` in the site-template repo, which only matches absolute UUIDs
+ * exactly) can turn them into real links. Foundry itself writes the relative form when a page link
+ * is dragged into another page of the same entry, and it's the only form that works in both a
+ * world entry and its compendium copy (an absolute `JournalEntry.<id>...` breaks once the entry is
+ * exported to a pack, where its ID and UUID prefix both change).
+ *
+ * Mirrors Foundry's own `_resolveRelativeUuid` rules, applied to a page:
+ *  - odd number of parts (`.<pageId>`, or `.<pageId>.<Type>.<id>`): the first part is a sibling
+ *    page's ID -- `<journalUuid>.JournalEntryPage.<parts>`.
+ *  - even number of parts (`.<Type>.<id>`): an explicit child of the root document --
+ *    `<journalUuid>.<parts>`.
+ *
+ * @param {string} html The raw HTML to process.
+ * @param {string} pageUuid The UUID of the page this HTML belongs to.
+ * @returns {string} The HTML with every relative `@UUID[...]` made absolute. Never
+ *   `null`/`undefined`; returns the exact same string if no relative enricher is present or the
+ *   page UUID has no parent segment to resolve against.
+ */
+export function resolveRelativeUuids(html, pageUuid) {
+  if (!html.includes("@UUID[.")) return html;
+  const marker = ".JournalEntryPage.";
+  const at = pageUuid?.lastIndexOf(marker) ?? -1;
+  if (at < 0) return html;
+  const journalUuid = pageUuid.slice(0, at);
+  return html.replace(RELATIVE_UUID_ENRICHER_RE, (full, rel) => {
+    const parts = rel.split(".").filter(Boolean);
+    if (!parts.length) return full;
+    const absolute =
+      parts.length % 2 === 0
+        ? `${journalUuid}.${parts.join(".")}`
+        : `${journalUuid}.JournalEntryPage.${parts.join(".")}`;
+    return `@UUID[${absolute}]`;
+  });
+}
+
 /**
  * Renders a page's body to the site's raw-HTML-passthrough model. Text pages are already
  * ProseMirror-authored HTML, used verbatim apart from resolving `<img src>` (see
- * {@link resolveImageSrcsInHtml}). Image pages become a single `<img>` (wrapped in
+ * {@link resolveImageSrcsInHtml}) and relative `@UUID` links (see {@link resolveRelativeUuids}).
+ * Image pages become a single `<img>` (wrapped in
  * `<figure>`/`<figcaption>` when a caption is set).
  *
  * @param {JournalEntryPage} page The Foundry native JournalEntryPage document to render.
@@ -197,7 +237,9 @@ function resolveImageSrcsInHtml(html) {
  *   this for a non-publishable type.
  */
 function renderPageHtml(page) {
-  if (page.type === "text") return resolveImageSrcsInHtml(page.text?.content ?? "");
+  if (page.type === "text") {
+    return resolveRelativeUuids(resolveImageSrcsInHtml(page.text?.content ?? ""), page.uuid);
+  }
   if (page.type === "image") {
     const caption = page.image?.caption?.trim?.() || "";
     const img = `<img src="${escapeHtml(resolveAssetUrl(page.src))}" alt="${escapeHtml(caption)}">`;
@@ -564,7 +606,7 @@ export function collectJournalData({ scopedToCaller = false } = {}) {
 
 /**
  * Triggers a file download of the collected payload as JSON, via Foundry's own
- * `saveDataToFile()` helper -- see README.md for why this is used over a hand-rolled Blob/anchor
+ * `saveDataToFile()` helper -- see DEVELOPMENT.md for why this is used over a hand-rolled Blob/anchor
  * download.
  *
  * @returns {object} The collected payload -- see {@link collectJournalData} for its exact shape

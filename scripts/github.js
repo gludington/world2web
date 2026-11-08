@@ -376,4 +376,42 @@ export async function pushBinaryAssets({ owner, repo, token, branch, files, comm
 
 // Functions that only github.test.mjs needs to see -- not part of this module's real API
 // (pushFiles/pushBinaryAssets/retractDeletedPost above), never imported from anywhere else.
+/**
+ * Verifies, without writing anything, that `token` can reach `owner/repo` and read `branch` --
+ * run when the Setup Wizard saves, so a mistyped repo name, a token that was never granted this
+ * repo under "Only select repositories", or a missing Contents permission shows up immediately
+ * instead of as a confusing failure on the first Publish to Web.
+ *
+ * Two read-only calls: `GET /repos/{owner}/{repo}` (any token with access to the repo can make
+ * it), then `GET /repos/{owner}/{repo}/branches/{branch}` (needs the token's Contents permission,
+ * so a 403 there means the token lacks it). Can't confirm *write* access without writing, but the
+ * wizard's token link pre-selects "Contents: Read and write", so read-only is the unlikely case.
+ *
+ * @param {RepoTarget} args `branch` defaults to `"main"`.
+ * @returns {Promise<{ok: true} | {ok: false, reason: "missing-fields"|"bad-token"|"repo-not-found"|"no-contents-permission"|"branch-not-found"|"network"|"unexpected", status?: number}>}
+ *   Never throws.
+ */
+export async function checkRepoAccess({ owner, repo, token, branch = "main" }) {
+  if (!owner || !repo || !token) return { ok: false, reason: "missing-fields" };
+  const base = `${API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
+  try {
+    const repoRes = await githubRequest("GET", base, token);
+    if (repoRes.status === 401) return { ok: false, reason: "bad-token", status: 401 };
+    // 404 covers both "no such repo" and "this token wasn't granted it" -- GitHub
+    // deliberately doesn't distinguish the two.
+    if (repoRes.status === 404 || repoRes.status === 403) {
+      return { ok: false, reason: "repo-not-found", status: repoRes.status };
+    }
+    if (!repoRes.ok) return { ok: false, reason: "unexpected", status: repoRes.status };
+
+    const branchRes = await githubRequest("GET", `${base}/branches/${encodeURIComponent(branch)}`, token);
+    if (branchRes.status === 403) return { ok: false, reason: "no-contents-permission", status: 403 };
+    if (branchRes.status === 404) return { ok: false, reason: "branch-not-found", status: 404 };
+    if (!branchRes.ok) return { ok: false, reason: "unexpected", status: branchRes.status };
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: "network" };
+  }
+}
+
 export const _test = { putFile };

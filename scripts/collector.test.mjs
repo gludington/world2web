@@ -1111,3 +1111,61 @@ test("a post's frontImage resolves a Foundry-relative path to an absolute URL, a
     assert.equal(byUuid["Page.2"].frontImage, "https://assets.forge-vtt.com/some-id/cover.webp");
   });
 });
+
+test("resolveRelativeUuids: a sibling-page link (.pageId) becomes an absolute page UUID", async () => {
+  const { resolveRelativeUuids } = await import("./collector.js");
+  const html = "<p>See @UUID[.YJgINFmlwzaLHjbo]{Module Setup}.</p>";
+  assert.equal(
+    resolveRelativeUuids(html, "JournalEntry.abc.JournalEntryPage.p1"),
+    "<p>See @UUID[JournalEntry.abc.JournalEntryPage.YJgINFmlwzaLHjbo]{Module Setup}.</p>",
+  );
+});
+
+test("resolveRelativeUuids: an even-part relative link resolves against the root journal", async () => {
+  const { resolveRelativeUuids } = await import("./collector.js");
+  assert.equal(
+    resolveRelativeUuids("@UUID[.JournalEntryPage.p2]", "JournalEntry.abc.JournalEntryPage.p1"),
+    "@UUID[JournalEntry.abc.JournalEntryPage.p2]",
+  );
+});
+
+test("resolveRelativeUuids: works for a compendium page, keeping the Compendium prefix", async () => {
+  const { resolveRelativeUuids } = await import("./collector.js");
+  assert.equal(
+    resolveRelativeUuids(
+      "@UUID[.p2]{Two}",
+      "Compendium.world2web.documentation.JournalEntry.abc.JournalEntryPage.p1",
+    ),
+    "@UUID[Compendium.world2web.documentation.JournalEntry.abc.JournalEntryPage.p2]{Two}",
+  );
+});
+
+test("resolveRelativeUuids: absolute links, and pages with no resolvable parent, are left untouched", async () => {
+  const { resolveRelativeUuids } = await import("./collector.js");
+  const abs = "@UUID[JournalEntry.x.JournalEntryPage.y]{Y}";
+  assert.equal(resolveRelativeUuids(abs, "JournalEntry.abc.JournalEntryPage.p1"), abs);
+  assert.equal(resolveRelativeUuids("@UUID[.p2]", "Page.1"), "@UUID[.p2]");
+});
+
+test("a relative @UUID link in a published text page is made absolute in the collected html", async () => {
+  const { collectJournalData } = await import("./collector.js");
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.journalA",
+    name: "Docs",
+    config: { published: true },
+    pages: [
+      fakePage({
+        uuid: "JournalEntry.journalA.JournalEntryPage.p1",
+        name: "Post",
+        published: true,
+        publishedAt: 1,
+        updatedAt: 1,
+        html: "<p>@UUID[.p2]{Other}</p>",
+      }),
+    ],
+  });
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const payload = await collectJournalData();
+    assert.equal(payload.journals[0].posts[0].html, "<p>@UUID[JournalEntry.journalA.JournalEntryPage.p2]{Other}</p>");
+  });
+});
