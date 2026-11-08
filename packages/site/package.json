@@ -20,7 +20,7 @@
     "./content-config": "./src/content.config.ts"
   },
   "bin": {
-    "world2web-ingest": "./scripts/ingest.js"
+    "world2web-ingest": "scripts/ingest.js"
   },
   "files": [
     "LICENSE",
