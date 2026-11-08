@@ -143,6 +143,10 @@ function postFrontmatter(worldSlug, journal, post) {
     // "manual". See collector.js's collectPost() for why this is always
     // collected regardless of postOrder.
     sortIndex: post.sortIndex ?? 0,
+    // Journal-level, copied onto each post like postOrder: whether this
+    // journal is featured on its world's homepage ("above"/"replace" Recent
+    // Posts) or not ("none"). See collector.js's resolveHomepage().
+    homepage: ["above", "replace"].includes(journal.homepage) ? journal.homepage : "none",
     publishedAt: post.publishedAt,
     updatedAt: post.updatedAt,
     // Soft-delete tombstone -- true once a previously-published post is

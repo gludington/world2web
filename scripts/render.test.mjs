@@ -278,3 +278,13 @@ test("frontImage passes through to frontmatter, defaulting to '' when unset", ()
   const withImage = renderPayloadToFiles(payload);
   assert.equal(JSON.parse(withImage.files[0].content.split("---")[1]).frontImage, "https://example.com/cover.png");
 });
+
+test("frontmatter carries the journal's homepage mode, defaulting to 'none'", () => {
+  const withMode = samplePayload();
+  withMode.journals[0].homepage = "replace";
+  assert.match(renderPayloadToFiles(withMode).files[0].content, /"homepage": "replace"/);
+  assert.match(renderPayloadToFiles(samplePayload()).files[0].content, /"homepage": "none"/);
+  const bogus = samplePayload();
+  bogus.journals[0].homepage = "sideways";
+  assert.match(renderPayloadToFiles(bogus).files[0].content, /"homepage": "none"/);
+});

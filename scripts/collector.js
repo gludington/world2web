@@ -87,6 +87,8 @@ const NS = "world2web";
  * @property {string|null} root
  * @property {string[]} tags Never `null`/`undefined`; `[]` if none are set.
  * @property {"newest"|"oldest"|"manual"} postOrder
+ * @property {"none"|"above"|"replace"} homepage Whether this journal is featured on its world's
+ *   homepage -- see {@link resolveHomepage}.
  * @property {number} postCount `posts.length`, provided directly so consumers don't need to
  *   compute it themselves.
  * @property {Post[]} posts Sorted chronologically by `publishedAt` ascending. `[]` if the journal
@@ -185,10 +187,50 @@ function resolveImageSrcsInHtml(html) {
   });
 }
 
+const RELATIVE_UUID_ENRICHER_RE = /@UUID\[\.([^\]]+)\]/g;
+
+/**
+ * Expands Foundry's relative `@UUID[.<...>]` enrichers into absolute UUIDs, so the site's own link
+ * resolver (`resolveContentLinks` in the site-template repo, which only matches absolute UUIDs
+ * exactly) can turn them into real links. Foundry itself writes the relative form when a page link
+ * is dragged into another page of the same entry, and it's the only form that works in both a
+ * world entry and its compendium copy (an absolute `JournalEntry.<id>...` breaks once the entry is
+ * exported to a pack, where its ID and UUID prefix both change).
+ *
+ * Mirrors Foundry's own `_resolveRelativeUuid` rules, applied to a page:
+ *  - odd number of parts (`.<pageId>`, or `.<pageId>.<Type>.<id>`): the first part is a sibling
+ *    page's ID -- `<journalUuid>.JournalEntryPage.<parts>`.
+ *  - even number of parts (`.<Type>.<id>`): an explicit child of the root document --
+ *    `<journalUuid>.<parts>`.
+ *
+ * @param {string} html The raw HTML to process.
+ * @param {string} pageUuid The UUID of the page this HTML belongs to.
+ * @returns {string} The HTML with every relative `@UUID[...]` made absolute. Never
+ *   `null`/`undefined`; returns the exact same string if no relative enricher is present or the
+ *   page UUID has no parent segment to resolve against.
+ */
+export function resolveRelativeUuids(html, pageUuid) {
+  if (!html.includes("@UUID[.")) return html;
+  const marker = ".JournalEntryPage.";
+  const at = pageUuid?.lastIndexOf(marker) ?? -1;
+  if (at < 0) return html;
+  const journalUuid = pageUuid.slice(0, at);
+  return html.replace(RELATIVE_UUID_ENRICHER_RE, (full, rel) => {
+    const parts = rel.split(".").filter(Boolean);
+    if (!parts.length) return full;
+    const absolute =
+      parts.length % 2 === 0
+        ? `${journalUuid}.${parts.join(".")}`
+        : `${journalUuid}.JournalEntryPage.${parts.join(".")}`;
+    return `@UUID[${absolute}]`;
+  });
+}
+
 /**
  * Renders a page's body to the site's raw-HTML-passthrough model. Text pages are already
  * ProseMirror-authored HTML, used verbatim apart from resolving `<img src>` (see
- * {@link resolveImageSrcsInHtml}). Image pages become a single `<img>` (wrapped in
+ * {@link resolveImageSrcsInHtml}) and relative `@UUID` links (see {@link resolveRelativeUuids}).
+ * Image pages become a single `<img>` (wrapped in
  * `<figure>`/`<figcaption>` when a caption is set).
  *
  * @param {JournalEntryPage} page The Foundry native JournalEntryPage document to render.
@@ -197,7 +239,9 @@ function resolveImageSrcsInHtml(html) {
  *   this for a non-publishable type.
  */
 function renderPageHtml(page) {
-  if (page.type === "text") return resolveImageSrcsInHtml(page.text?.content ?? "");
+  if (page.type === "text") {
+    return resolveRelativeUuids(resolveImageSrcsInHtml(page.text?.content ?? ""), page.uuid);
+  }
   if (page.type === "image") {
     const caption = page.image?.caption?.trim?.() || "";
     const img = `<img src="${escapeHtml(resolveAssetUrl(page.src))}" alt="${escapeHtml(caption)}">`;
@@ -423,6 +467,24 @@ function resolvePostFrontImage(page) {
 
 const POST_ORDERS = new Set(["newest", "oldest", "manual"]);
 
+/** Valid non-default `homepage` modes -- see {@link resolveHomepage}. */
+const HOMEPAGE_MODES = new Set(["above", "replace"]);
+
+/**
+ * Whether this journal is featured on its world's homepage on the site: `"above"` lists its posts
+ * (in its own post order) above Recent Posts, `"replace"` lists them instead of Recent Posts, and
+ * `"none"` (the default) leaves the homepage alone. The Publishing Settings dialog keeps at most
+ * one journal per world set to a non-`"none"` value.
+ *
+ * @param {JournalEntry} entry
+ * @returns {"none"|"above"|"replace"} Never `null`/`undefined`; `"none"` for any unset or
+ *   unrecognized value.
+ */
+export function resolveHomepage(entry) {
+  const mode = entry.flags?.[NS]?.homepage;
+  return HOMEPAGE_MODES.has(mode) ? mode : "none";
+}
+
 /**
  * How this journal's own post-archive page orders its posts -- independent of every other listing
  * site-wide (recent posts, author/tag archives), which always show newest-published-first
@@ -504,6 +566,7 @@ function collectJournal(entry) {
     root: resolveRoot(entry),
     tags: journalTags,
     postOrder: resolvePostOrder(entry),
+    homepage: resolveHomepage(entry),
     postCount: posts.length,
     posts,
   };
@@ -564,7 +627,7 @@ export function collectJournalData({ scopedToCaller = false } = {}) {
 
 /**
  * Triggers a file download of the collected payload as JSON, via Foundry's own
- * `saveDataToFile()` helper -- see README.md for why this is used over a hand-rolled Blob/anchor
+ * `saveDataToFile()` helper -- see DEVELOPMENT.md for why this is used over a hand-rolled Blob/anchor
  * download.
  *
  * @returns {object} The collected payload -- see {@link collectJournalData} for its exact shape

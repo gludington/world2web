@@ -66,7 +66,7 @@
       "PageTypeNotPublishable": "\"{name}\" is a {type} page -- only text and image pages can be published.",
       "NoCurrentPage": "couldn't determine which page to publish -- see console.",
       "PostSettingsSaved": "post settings saved for \"{name}\".",
-      "DeploySiteSaved": "GitHub Repo Owner, Repo Name, and Token saved. Try Publish to Web whenever you're ready.",
+      "DeploySiteSaved": "connected to GitHub and saved. Mark a journal as published, publish a page, then click Publish to Web.",
       "SiteUpdated": "your site is being updated to World2Web site version {version}."
     },
     "Button": {
@@ -107,6 +107,11 @@
       "PostOrderOldest": "Oldest first",
       "PostOrderManual": "Manual (same order as this journal's page list in Foundry)",
       "PostOrderHint": "Order of this journal's own post listing only -- recent-posts widgets and author/tag archives elsewhere on the site always show newest first regardless. For Manual: reordering pages here doesn't update the live site by itself -- click Publish to Web (or Dev Sync) again afterward to push the new order.",
+      "HomepageLabel": "Homepage",
+      "HomepageNone": "Not on homepage",
+      "HomepageAbove": "Show above Recent Posts",
+      "HomepageReplace": "Replace Recent Posts",
+      "HomepageHint": "Features this journal's posts, in its own post order, on this world's page on your site -- which is the site's homepage when only one world publishes to it. Useful for a \"Start Here\" journal or a guide meant to be read in order. Only one journal per world can be featured; choosing this for one removes it from any other. Takes effect on the next Publish to Web.",
       "DefaultPlaceholder": "Default: {value}",
       "None": "(none)",
       "Save": "Save",
@@ -123,17 +128,27 @@
       "DeployStep2Of3": "Step 2 of 3: Create a GitHub token",
       "DeployStep3Of3": "Step 3 of 3: Save your details",
       "DeploySiteIntro": "Pick a host below to open its own one-click deploy page in a new tab. Each generates a new repo from the World2Web site template under your own GitHub account and hosts it there -- both in one flow, on that host's own site, with its own deploy authentication handled behind the scenes (the separate Cloudflare API token this module's README mentions is for its fully-manual setup path -- it doesn't come up in this one-click flow).",
-      "DeploySiteFirstBuildNote": "Deployment may trigger automatically and fail with no content, but will publish successfully when you publish.",
+      "DeploySiteFirstBuildNote": "Your host will build a placeholder \"your site is ready\" page first. Note the site address it gives you (e.g. something.netlify.app) -- that's the URL to share with your players once you publish.",
       "DeploySiteRepoNameLabel": "Repo name",
-      "DeploySiteRepoNameHint": "At Cloudflare/Netlify/Vercel, make sure to pick the same repository name you used here.",
+      "DeploySiteRepoNameHint": "Netlify and Cloudflare will suggest the name \"world2web-site-template\" -- change it to exactly this name. Vercel picks it up automatically.",
       "DeploySiteDeployToLabel": "Deploy to:",
       "DeploySiteAlreadyConfiguredWarning": "<strong>Heads up:</strong> GitHub Repo Owner/Name/Token are already set here (currently pointing at \"{owner}/{repo}\"). Continuing creates a brand-new, separate repo and site -- it won't touch your existing one by itself. But finishing this wizard afterward (step 3) will repoint World2Web at the new one, and it'll stop publishing to your current site -- which stays live at its existing URL either way, just frozen, not deleted. Only continue if you actually mean to switch sites (or want a genuinely separate second one).",
       "DeploySiteTokenIntro": "Foundry needs its own GitHub token to push posts to your new repo -- none of these deploy flows create one for you, so this is still a separate step on GitHub's own site. The button below opens GitHub's token creation page with the right owner and \"Contents: Read and write\" permission already pre-filled -- under \"Only select repositories,\" pick <strong>{repo}</strong> (there's no way to pre-select that part), then Generate token and copy it before continuing to the last step.",
-      "DeploySiteSaveIntro": "Paste in your new repo's owner, name, and the token you just copied -- this saves them directly, the same as the fields in Configure Settings.",
+      "DeploySiteSaveIntro": "Enter your GitHub username (the repo owner), the repo name from step 1, and the token you just copied. World2Web checks that it can reach the repo before saving.",
       "OpenGithubTokenPage": "Open GitHub & Continue",
       "DeployNetlify": "Netlify",
       "DeployCloudflare": "Cloudflare",
-      "DeployVercel": "Vercel"
+      "DeployVercel": "Vercel",
+      "SaveAnyway": "Save Anyway",
+      "RepoCheck": {
+        "missing-fields": "All three fields are required.",
+        "bad-token": "GitHub rejected the token. Check that you copied all of it, and that it hasn't expired.",
+        "repo-not-found": "Couldn't find <strong>{owner}/{repo}</strong> with this token. Check the spelling of both the username and the repo name, and that the token was granted this repo under \"Only select repositories\".",
+        "no-contents-permission": "The token can see <strong>{owner}/{repo}</strong> but doesn't have the \"Contents\" permission. Edit the token on GitHub and set Contents to \"Read and write\".",
+        "branch-not-found": "<strong>{owner}/{repo}</strong> has no branch named \"{branch}\". If your host just created the repo, wait a minute and try again; otherwise change the GitHub Branch setting.",
+        "network": "Couldn't reach GitHub. Check your connection, or use Save Anyway to skip this check.",
+        "unexpected": "GitHub returned an unexpected response ({status}). Try again, or use Save Anyway to skip this check."
+      }
     }
   }
 }
