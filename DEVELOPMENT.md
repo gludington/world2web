@@ -246,7 +246,7 @@ site (`src/lib/config.ts`) reads them at build time. This is the mechanism for r
 *already-deployed* site without any git action: changing any of them is just a Foundry setting
 change and a click of Publish, same as everything else.
 
-- **Site Theme** (`default`, or a name like `midnight`) -- read by `Layout.astro` and set as
+- **Site Theme** (`default`, or a built-in theme: `dnd`, `ravenloft`, `scifi`) -- read by `Layout.astro` and set as
   `<html data-theme="...">`, which selects a matching `[data-theme="..."]` block already compiled
   into the site repo's own `src/styles/tokens.css`. New named themes are added directly to that
   file (in the site repo, not here) -- there's no separate hosted theme collection or custom-URL

@@ -36,7 +36,7 @@
       },
       "SiteTheme": {
         "Name": "Site Theme",
-        "Hint": "A theme name (e.g. 'midnight') matching one built into the site template's own styles/tokens.css, or blank/'default' for the site's built-in look."
+        "Hint": "One of the site's built-in themes -- 'dnd', 'ravenloft' or 'scifi' -- or blank/'default' for the standard look."
       },
       "AllowThemeOverride": {
         "Name": "Allow Visitor Theme Override",
