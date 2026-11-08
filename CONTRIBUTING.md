@@ -113,15 +113,18 @@ by hand (see `scripts/site-version.js`). So this doesn't exercise version pinnin
 real version on npm (see "Release candidates" below). To put a test site back on a release, set
 the dependency to that version and delete `vendor/`.
 
-An alternative that needs no commits to the site repo is a preview build from
-[pkg.pr.new](https://pkg.pr.new), which gives every push to a branch an installable URL:
+An alternative that needs no commits of tarballs: every push to a branch other than `main`, and
+every pull request, publishes a preview build to [pkg.pr.new](https://pkg.pr.new)
+(`.github/workflows/preview.yml`). No npm release is made and no version number is used up. The
+install URL is in the **Preview build** run's log, and in a comment on the PR when there is one.
+Put it in a test site's `package.json` in place of a version and push:
 
 ```json
-"@world2web/site": "https://pkg.pr.new/gludington/world2web/@world2web/site@<commit>"
+"@world2web/site": "<preview URL from the workflow>"
 ```
 
-*Not set up yet: it needs the pkg.pr.new GitHub App installed on this repo, then a small
-workflow.*
+Like `file:`, a URL counts as set by hand, so Publish to Web leaves it alone. Previews need the
+pkg-pr-new GitHub App installed on this repo.
 
 ### Release candidates (testing version pinning)
 

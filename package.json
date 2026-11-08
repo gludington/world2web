@@ -16,5 +16,8 @@
       "esbuild",
       "workerd"
     ]
+  },
+  "devDependencies": {
+    "pkg-pr-new": "^0.0.93"
   }
 }
