@@ -100,7 +100,7 @@
       "AuthorImageLabel": "Author image override",
       "AuthorImageHint": "Ignored if Author Actor override above is set. Path or URL. Defaults to that same owner's character portrait, if they have one.",
       "RootLabel": "Root path override",
-      "RootHint": "A \"/\"-separated list of folder names, e.g. \"Campaign/Arc 1\" -- placed between /journals/&lt;world&gt;/ and this journal's own address on the site, and each folder in the list becomes its own browsable page there too. Defaults to this journal's own folder hierarchy in Foundry.",
+      "RootHint": "A \"/\"-separated list of folder names, e.g. \"Campaign/Arc 1\" -- placed between /&lt;world&gt;/journals/ and this journal's own address on the site, and each folder in the list becomes its own browsable page there too. Defaults to this journal's own folder hierarchy in Foundry.",
       "TagsLabel": "Tags (comma-separated)",
       "PostOrderLabel": "Post order",
       "PostOrderNewest": "Newest first",
