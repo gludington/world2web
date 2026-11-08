@@ -1139,6 +1139,21 @@ async function openJournalConfigDialog(entry) {
         </select>
         <p class="hint">${t("Dialog.PostOrderHint")}</p>
       </div>
+      ${
+        // GM-only: the homepage is site-wide, so a player allowed to
+        // self-publish their own journal shouldn't be able to take it over.
+        game.user.isGM
+          ? `<div class="form-group">
+        <label>${t("Dialog.HomepageLabel")}</label>
+        <select name="homepage">
+          <option value="none" ${!["above", "replace"].includes(config.homepage) ? "selected" : ""}>${t("Dialog.HomepageNone")}</option>
+          <option value="above" ${config.homepage === "above" ? "selected" : ""}>${t("Dialog.HomepageAbove")}</option>
+          <option value="replace" ${config.homepage === "replace" ? "selected" : ""}>${t("Dialog.HomepageReplace")}</option>
+        </select>
+        <p class="hint">${t("Dialog.HomepageHint")}</p>
+      </div>`
+          : ""
+      }
     </fieldset>
   `;
 
@@ -1160,6 +1175,8 @@ async function openJournalConfigDialog(entry) {
           root: button.form.elements.root.value,
           tags: button.form.elements.tags.value,
           postOrder: button.form.elements.postOrder.value,
+          // Absent for non-GMs (the field isn't rendered for them).
+          homepage: button.form.elements.homepage?.value,
         }),
       },
       { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
@@ -1167,7 +1184,9 @@ async function openJournalConfigDialog(entry) {
     rejectClose: false,
   });
 
-  if (!result) return; // cancelled or closed
+  // Cancel has no callback, so DialogV2 resolves with its action name
+  // ("cancel") rather than null -- treat that the same as closing.
+  if (!result || typeof result === "string") return; // cancelled or closed
 
   const tags = String(result.tags ?? "")
     .split(",")
@@ -1192,7 +1211,28 @@ async function openJournalConfigDialog(entry) {
     flagsUpdate.publishedAt = Date.now();
   }
 
+  // Only written when the field was shown (GM), so a player's save never
+  // touches it.
+  const homepage =
+    game.user.isGM && result.homepage !== undefined
+      ? ["above", "replace"].includes(result.homepage)
+        ? result.homepage
+        : "none"
+      : undefined;
+  if (homepage !== undefined) flagsUpdate.homepage = homepage;
+
   await entry.update({ flags: { [MODULE_ID]: flagsUpdate } });
+
+  // At most one homepage journal per world: featuring this one un-features
+  // any other, rather than leaving the site to pick between two.
+  if (homepage && homepage !== "none") {
+    for (const other of game.journal.contents) {
+      if (other === entry) continue;
+      if (["above", "replace"].includes(other.flags?.[MODULE_ID]?.homepage)) {
+        await other.update({ flags: { [MODULE_ID]: { homepage: "none" } } });
+      }
+    }
+  }
 
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.PublishingSettingsSaved", { name: entry.name })}`);
 }
@@ -1303,7 +1343,9 @@ async function openPostConfigDialog(page) {
     rejectClose: false,
   });
 
-  if (!result) return; // cancelled or closed
+  // Cancel has no callback, so DialogV2 resolves with its action name
+  // ("cancel") rather than null -- treat that the same as closing.
+  if (!result || typeof result === "string") return; // cancelled or closed
 
   const tags = String(result.tags ?? "")
     .split(",")

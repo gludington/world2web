@@ -1169,3 +1169,20 @@ test("a relative @UUID link in a published text page is made absolute in the col
     assert.equal(payload.journals[0].posts[0].html, "<p>@UUID[JournalEntry.journalA.JournalEntryPage.p2]{Other}</p>");
   });
 });
+
+test("journal homepage mode: defaults to 'none', passes 'above'/'replace' through, rejects anything else", async () => {
+  const { collectJournalData } = await import("./collector.js");
+  const page = () =>
+    fakePage({ uuid: `JournalEntry.j.JournalEntryPage.${Math.random()}`, name: "P", published: true, publishedAt: 1, updatedAt: 1 });
+  const journals = [
+    fakeJournalEntry({ uuid: "JournalEntry.a", name: "A", config: { published: true }, pages: [page()] }),
+    fakeJournalEntry({ uuid: "JournalEntry.b", name: "B", config: { published: true, homepage: "above" }, pages: [page()] }),
+    fakeJournalEntry({ uuid: "JournalEntry.c", name: "C", config: { published: true, homepage: "replace" }, pages: [page()] }),
+    fakeJournalEntry({ uuid: "JournalEntry.d", name: "D", config: { published: true, homepage: "bogus" }, pages: [page()] }),
+  ];
+  await withMockFoundry({ journalEntries: journals, users: [] }, async () => {
+    const payload = await collectJournalData();
+    const byTitle = Object.fromEntries(payload.journals.map((j) => [j.title, j.homepage]));
+    assert.deepEqual(byTitle, { A: "none", B: "above", C: "replace", D: "none" });
+  });
+});

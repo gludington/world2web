@@ -87,6 +87,8 @@ const NS = "world2web";
  * @property {string|null} root
  * @property {string[]} tags Never `null`/`undefined`; `[]` if none are set.
  * @property {"newest"|"oldest"|"manual"} postOrder
+ * @property {"none"|"above"|"replace"} homepage Whether this journal is featured on its world's
+ *   homepage -- see {@link resolveHomepage}.
  * @property {number} postCount `posts.length`, provided directly so consumers don't need to
  *   compute it themselves.
  * @property {Post[]} posts Sorted chronologically by `publishedAt` ascending. `[]` if the journal
@@ -465,6 +467,24 @@ function resolvePostFrontImage(page) {
 
 const POST_ORDERS = new Set(["newest", "oldest", "manual"]);
 
+/** Valid non-default `homepage` modes -- see {@link resolveHomepage}. */
+const HOMEPAGE_MODES = new Set(["above", "replace"]);
+
+/**
+ * Whether this journal is featured on its world's homepage on the site: `"above"` lists its posts
+ * (in its own post order) above Recent Posts, `"replace"` lists them instead of Recent Posts, and
+ * `"none"` (the default) leaves the homepage alone. The Publishing Settings dialog keeps at most
+ * one journal per world set to a non-`"none"` value.
+ *
+ * @param {JournalEntry} entry
+ * @returns {"none"|"above"|"replace"} Never `null`/`undefined`; `"none"` for any unset or
+ *   unrecognized value.
+ */
+export function resolveHomepage(entry) {
+  const mode = entry.flags?.[NS]?.homepage;
+  return HOMEPAGE_MODES.has(mode) ? mode : "none";
+}
+
 /**
  * How this journal's own post-archive page orders its posts -- independent of every other listing
  * site-wide (recent posts, author/tag archives), which always show newest-published-first
@@ -546,6 +566,7 @@ function collectJournal(entry) {
     root: resolveRoot(entry),
     tags: journalTags,
     postOrder: resolvePostOrder(entry),
+    homepage: resolveHomepage(entry),
     postCount: posts.length,
     posts,
   };
