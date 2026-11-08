@@ -127,7 +127,7 @@
       "DeployStep1Of3": "Step 1 of 3: Name your site and choose a host",
       "DeployStep2Of3": "Step 2 of 3: Create a GitHub token",
       "DeployStep3Of3": "Step 3 of 3: Save your details",
-      "DeploySiteIntro": "Pick a host below to open its own one-click deploy page in a new tab. Each generates a new repo from the World2Web site template under your own GitHub account and hosts it there -- both in one flow, on that host's own site, with its own deploy authentication handled behind the scenes (the separate Cloudflare API token this module's README mentions is for its fully-manual setup path -- it doesn't come up in this one-click flow).",
+      "DeploySiteIntro": "Pick a host below. Its own setup page opens in a new tab and creates your site: a copy of the World2Web site template in your GitHub account, built and published by that host. You don't need any other accounts or tokens for this step.",
       "DeploySiteFirstBuildNote": "Your host will build a placeholder \"your site is ready\" page first. Note the site address it gives you (e.g. something.netlify.app) -- that's the URL to share with your players once you publish.",
       "DeploySiteRepoNameLabel": "Repo name",
       "DeploySiteRepoNameHint": "Netlify and Cloudflare will suggest the name \"world2web-site-template\" -- change it to exactly this name. Vercel picks it up automatically.",
