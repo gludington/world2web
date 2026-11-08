@@ -1,0 +1,205 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { getSiteConfig } from "../../lib/config";
+import Breadcrumbs from "../../components/Breadcrumbs.astro";
+
+const siteName = getSiteConfig().siteName;
+
+// One global page, not per-world -- Pagefind's index spans the whole site
+// regardless of which page loaded it, so a /<world>/search/ split never
+// bought anything. Each post still carries its own `world` data-pagefind-
+// filter marker, so narrowing to one world is just a checkbox here. See
+// README.md's "Search" section for the indexing side of this.
+//
+// Uses Pagefind's Component UI (custom elements: pagefind-input,
+// pagefind-results, etc.) rather than the older all-in-one PagefindUI --
+// the latter has no supported way to render a result field as a link,
+// which the author credit below needs. See README.md's "Search" section
+// for why.
+---
+
+<Layout title="Search">
+  <Breadcrumbs siteName={siteName} crumbs={[]} currentLabel="Search" />
+  <h1>Search</h1>
+
+  <pagefind-input autofocus placeholder="Search posts and author bios…"></pagefind-input>
+  <pagefind-summary default-message="Type to search across every world."></pagefind-summary>
+
+  <!-- Shown only if pagefind-component-ui.js never registers its custom
+       elements (see the timeout race in the script below) -- i.e. this is
+       a dev/preview build that ran `astro build` without also running
+       `pagefind --site dist`. See README.md's "Search" section for the
+       local command that generates it. -->
+  <p id="search-fallback" class="empty-state" hidden>
+    Search isn't built in this preview. See the site repo's README.md ("Search") for the local
+    build command that generates it.
+  </p>
+
+  <div class="search-layout">
+    <aside class="search-filters">
+      <!-- Auto-populates one group per data-pagefind-filter key found across
+           the indexed content (author/tags/journal/world -- see the post page's
+           own markers) -- no per-key wiring needed here. -->
+      <pagefind-filter-pane></pagefind-filter-pane>
+    </aside>
+    <div class="search-results">
+      <pagefind-results>
+        <!-- Custom result template (Pagefind's own templating language, not
+             Astro's) -- lets the author credit render as a real link via
+             meta.authorUrl, which the old Default UI (PagefindUI) had no
+             supported way to do. meta.url/`url` fallback pattern matches
+             Pagefind's own documented default template; we never set
+             meta.url ourselves, so this always resolves to the real page
+             URL. -->
+        <script type="text/pagefind-template">
+          <li class="search-result">
+            {{#if meta.image}}
+            <img class="search-result-thumb" src="{{ meta.image }}" alt="{{ meta.image_alt }}" />
+            {{/if}}
+            <div class="search-result-body">
+              <a class="search-result-title" href="{{ meta.url | default(url) | safeUrl }}">{{ meta.title }}</a>
+              {{#if meta.author}}
+              <p class="search-result-author">by <a href="{{ meta.authorUrl | safeUrl }}">{{ meta.author }}</a></p>
+              {{/if}}
+              {{#if excerpt}}
+              <p class="search-result-excerpt">{{+ excerpt +}}</p>
+              {{/if}}
+            </div>
+          </li>
+        </script>
+      </pagefind-results>
+    </div>
+  </div>
+</Layout>
+
+<link href="/pagefind/pagefind-component-ui.css" rel="stylesheet" />
+<script src="/pagefind/pagefind-component-ui.js" type="module"></script>
+<script is:inline>
+  window.addEventListener("DOMContentLoaded", () => {
+    const fallback = document.getElementById("search-fallback");
+    // whenDefined() never resolves at all if the module 404s (no Pagefind
+    // build present), so it's raced against a timeout rather than awaited
+    // directly -- see this page's own doc comment above for when that
+    // happens.
+    const ready = customElements.whenDefined("pagefind-results").then(() => false);
+    const timedOut = new Promise((resolve) => setTimeout(resolve, 1500, true));
+
+    Promise.race([ready, timedOut]).then((didTimeOut) => {
+      if (didTimeOut) {
+        fallback.hidden = false;
+        return;
+      }
+      // The header search box (Layout.astro) submits here as a plain GET
+      // ?q=... with no JS of its own -- triggerSearch() is the Component
+      // UI's own instance-level API for running a search programmatically,
+      // mirroring the old PagefindUI.triggerSearch() this replaced. There's
+      // no documented signal for "the default instance now exists" (only
+      // that a component creates it on connecting), so this polls briefly
+      // rather than assuming a fixed delay.
+      const q = new URLSearchParams(window.location.search).get("q");
+      if (!q) return;
+      const trySearch = (attemptsLeft) => {
+        const instance = window.PagefindComponents?.getInstanceManager?.().getInstance("default");
+        if (instance) {
+          instance.triggerSearch(q);
+        } else if (attemptsLeft > 0) {
+          setTimeout(() => trySearch(attemptsLeft - 1), 50);
+        }
+      };
+      trySearch(20);
+    });
+  });
+</script>
+
+<style>
+  /* Pagefind's Component UI ships its own --pf-* theme variables, defaulting
+     to light-mode colors with a [data-pf-theme="dark"] variant it never gets
+     switched into (that's a separate, unrelated attribute from this site's
+     own data-theme). Aliasing them to this site's own tokens instead makes
+     every theme (including dark ones like ravenloft) work automatically,
+     without a light/dark special case of our own. :global(:root) because
+     this page is the only one that ever loads pagefind-component-ui.css. */
+  :global(:root) {
+    --pf-text: var(--color-text-main);
+    --pf-text-secondary: var(--color-text-muted);
+    --pf-text-muted: var(--color-text-muted);
+    --pf-background: var(--color-card-bg);
+    --pf-border: var(--color-border);
+    --pf-border-focus: var(--color-accent);
+    --pf-hover: color-mix(in srgb, var(--color-accent) 12%, var(--color-card-bg));
+    --pf-mark: var(--color-accent);
+    --pf-outline-focus: var(--color-accent);
+    --pf-border-radius: var(--card-radius, 6px);
+  }
+
+  pagefind-input {
+    display: block;
+    max-width: 32rem;
+    margin: 1.5rem 0;
+  }
+
+  .search-layout {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 2.5rem;
+    margin-top: 1.5rem;
+  }
+
+  @media (min-width: 900px) {
+    .search-layout {
+      grid-template-columns: 1fr 2.5fr;
+    }
+  }
+
+  /* :global() on everything below -- these classes only ever exist on
+     elements Pagefind clones at runtime from the <script type=
+     "text/pagefind-template"> text above, which Astro treats as opaque
+     text (never parsed as HTML), so it never stamps its usual scoping
+     attribute onto them. A scoped rule here would silently never match
+     the real, live result markup at all. Pagefind's own custom elements
+     (pagefind-results etc.) reset color to the bare CSS system keyword
+     `CanvasText` -- not any --pf-* variable -- so every text node in this
+     template needs its own explicit color rather than relying on
+     inheritance or the --pf-* aliases above (those only affect Pagefind's
+     *own* .pf-* classed markup, e.g. the input box and filter pane, which
+     this custom template doesn't use). */
+  :global(.search-result) {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem 0;
+    border-bottom: 1px solid var(--color-border);
+    color: var(--color-text-main);
+  }
+
+  :global(.search-result-thumb) {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: var(--card-radius, 0px);
+    flex-shrink: 0;
+  }
+
+  :global(.search-result-title) {
+    font-family: var(--color-font-heading);
+    font-size: 1.15rem;
+  }
+
+  :global(.search-result-author) {
+    color: var(--color-text-muted);
+    font-size: 0.9rem;
+    margin: 0.2rem 0;
+  }
+
+  :global(.search-result-excerpt) {
+    color: var(--color-text-main);
+  }
+
+  /* Matches Pagefind's own default-template convention for a match
+     (bold + accent color, no highlight box) rather than the browser's
+     default yellow <mark> background, which never adapts to a theme. */
+  :global(.search-result-excerpt mark) {
+    background: transparent;
+    font-weight: 600;
+    color: var(--color-accent);
+  }
+</style>

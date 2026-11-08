@@ -1,0 +1,55 @@
+---
+import Layout from "../layouts/Layout.astro";
+import { getSiteConfig } from "../lib/config";
+import { getPublishedPosts } from "../lib/posts";
+import { worldIndexRoute, worldLabel } from "../lib/routes";
+import WorldIndex from "../components/WorldIndex.astro";
+
+// Single-world vs. multi-world sites shouldn't look the same: with exactly
+// one world, a "pick a world" step in front of it is a pointless extra
+// click, so the homepage just IS that world's index directly. With more
+// than one, pooling every world's journals into one mixed feed (the old
+// behavior) reads as confusing rather than useful once campaigns are
+// genuinely unrelated -- so instead this becomes a world picker, and each
+// world's own index (also reachable at /worlds/, and at
+// /<world>/<journalsSegment>/ directly) is one click away.
+const siteName = getSiteConfig().siteName;
+const posts = await getPublishedPosts();
+const worlds = [...new Set(posts.map((post) => post.data.world))].sort();
+---
+
+<Layout title={siteName}>
+  <h1 class="site-title">{siteName}</h1>
+  {
+    posts.length === 0 ? (
+      // A fresh site before its first Publish to Web. Shown instead of an
+      // empty index so a new user's first deploy visibly works -- and so
+      // this URL is clearly "your site", ready to share.
+      <section class="panel">
+        <h2 class="panel-title">Your site is ready</h2>
+        <p>
+          This site was built from the World2Web template and is live. It's empty because nothing
+          has been published from Foundry yet.
+        </p>
+        <p>
+          In Foundry, finish the World2Web Setup Wizard, mark a journal as published, publish a
+          page, then click <strong>Publish to Web</strong>. Your posts will show up here a few
+          minutes later, once your host rebuilds.
+        </p>
+      </section>
+    ) : worlds.length <= 1 ? (
+      <WorldIndex world={worlds[0] ?? ""} />
+    ) : (
+      <section class="panel">
+        <h2 class="panel-title">Worlds</h2>
+        <ul class="entry-list">
+          {worlds.map((world) => (
+            <li class="entry">
+              <a class="entry-title" href={worldIndexRoute(world)}>{worldLabel(world)}</a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
+</Layout>

@@ -1,0 +1,105 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { tagRoute } from "../lib/routes";
+import { slugifyTag } from "../lib/tags";
+
+// Every tag that currently has at least one post within whatever scope the
+// caller hands in -- "active" in the sense that its /<world>/tags/<tag>/
+// archive page (see pages/[world]/tags/[tag]/[...page].astro) actually
+// exists and has content, as opposed to listing every tag anyone's ever
+// typed. Tags are world-scoped (two worlds can each have their own
+// "combat" tag, landing on two different pages), so the dedup key is
+// world+tagSlug, not just the tag text -- same reasoning as the tag
+// archive page's own getStaticPaths. Takes posts as a prop, same reasoning
+// as RecentPosts: the caller decides the scope.
+interface TagEntry {
+  name: string;
+  world: string;
+  tagSlug: string;
+  count: number;
+}
+
+interface Props {
+  posts: CollectionEntry<"posts">[];
+}
+const { posts } = Astro.props;
+
+const tags = new Map<string, TagEntry>();
+for (const post of posts) {
+  for (const tagName of post.data.tags) {
+    const tagSlug = slugifyTag(tagName);
+    const key = `${post.data.world}/${tagSlug}`;
+    if (!tags.has(key)) {
+      tags.set(key, { name: tagName, world: post.data.world, tagSlug, count: 0 });
+    }
+    tags.get(key)!.count += 1;
+  }
+}
+
+const sortedTags = Array.from(tags.values()).sort((a, b) => a.name.localeCompare(b.name));
+---
+
+{ sortedTags.length > 0 && (
+  <section class="panel tag-cloud-panel">
+    <h2 class="panel-title">Tags</h2>
+    <div class="tag-container">
+      {sortedTags.map((tag) => (
+        <a href={tagRoute ? tagRoute(tag) : `#tags/${tag}`} class="tag-item">
+          <span class="tag-name">{tag.name}</span>
+          <span class="tag-count">({tag.count})</span>
+        </a>
+      ))}
+    </div>
+  </section>
+) }
+
+<style>
+  /* --- Structural Layout Only --- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .tag-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem; /* Tight margins mimic classic glossary indexes */
+    margin: 0;
+    padding: 0;
+  }
+
+  .tag-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    text-decoration: none;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+    
+    /* Variable links map directly back to your design system theme tokens */
+    color: var(--color-text-main);
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  /* Specific typography styling for the text and numerical value count */
+  .tag-name {
+    font-family: var(--color-font-body);
+    font-weight: 600;
+  }
+
+  .tag-count {
+    font-family: var(--color-font-body);
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+  }
+
+  /* --- Interactive Default Theme States --- */
+  .tag-item:hover {
+    color: var(--color-accent);
+    background-color: var(--color-card-bg);
+    border-color: var(--color-border);
+  }
+</style>

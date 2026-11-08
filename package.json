@@ -2,9 +2,17 @@
   "name": "world2web-foundry-module",
   "private": true,
   "type": "module",
-  "version": "0.11.0",
-  "description": "Not an npm package -- module.json is what Foundry reads. This file only exists so Node's test runner treats scripts/*.js as ES modules without a warning.",
+  "description": "Workspace root. The Foundry module lives at the top level (module.json is what Foundry reads); packages/site is the @world2web/site npm package, released in lockstep with the module.",
   "scripts": {
-    "test": "node --test scripts/*.test.mjs"
+    "test": "node --test scripts/*.test.mjs",
+    "site:dev": "pnpm --filter world2web-starter dev",
+    "site:build": "pnpm --filter world2web-starter build"
+  },
+  "packageManager": "pnpm@10.19.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   }
 }

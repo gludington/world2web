@@ -26,6 +26,10 @@
         "Name": "GitHub Branch",
         "Hint": "The branch your host (Netlify/Cloudflare Pages/etc.) builds from."
       },
+      "ManageSiteVersion": {
+        "Name": "Keep Site Up to Date",
+        "Hint": "On Publish to Web, updates your site to the version that matches this module, so site fixes and features arrive when you update World2Web. Turn off only if you maintain your site's code yourself."
+      },
       "GithubToken": {
         "Name": "GitHub Personal Access Token",
         "Hint": "Fine-grained token.  Recommended to create a token with permissions to only this one repo, Contents: Read and write permission."
@@ -62,7 +66,8 @@
       "PageTypeNotPublishable": "\"{name}\" is a {type} page -- only text and image pages can be published.",
       "NoCurrentPage": "couldn't determine which page to publish -- see console.",
       "PostSettingsSaved": "post settings saved for \"{name}\".",
-      "DeploySiteSaved": "GitHub Repo Owner, Repo Name, and Token saved. Try Publish to Web whenever you're ready."
+      "DeploySiteSaved": "GitHub Repo Owner, Repo Name, and Token saved. Try Publish to Web whenever you're ready.",
+      "SiteUpdated": "your site is being updated to World2Web site version {version}."
     },
     "Button": {
       "DevSync": "Dev Sync",

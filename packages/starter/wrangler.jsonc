@@ -1,0 +1,11 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "world2web-site-template",
+  "compatibility_date": "2026-01-01",
+  // Pure static assets, no Worker script -- Cloudflare's newer "Create
+  // Application" flow deploys via `wrangler deploy`, which needs this file
+  // to know what to serve. `directory` is Astro's build output.
+  "assets": {
+    "directory": "./dist"
+  }
+}

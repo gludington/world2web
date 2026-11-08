@@ -8,7 +8,8 @@ import {
   resolveDefaultRoot,
 } from "./collector.js";
 import { renderPayloadToFiles, buildSiteConfigFile } from "./render.js";
-import { pushFiles, pushBinaryAssets, retractDeletedPost } from "./github.js";
+import { pushFiles, pushBinaryAssets, retractDeletedPost, readRepoFile } from "./github.js";
+import { planSitePin, isSiteVersionPublished } from "./site-version.js";
 import { collectAssets, rewriteAssetReferences } from "./assets.js";
 import { scopedDeletionUuids } from "./ownership.js";
 
@@ -224,6 +225,17 @@ Hooks.once("init", () => {
     config: true,
     type: String,
     default: "main",
+  });
+  // On by default: Publish to Web keeps the site's @world2web/site
+  // dependency on the version matching this module (see site-version.js).
+  // Off is for power users who've taken over their site's code themselves.
+  game.settings.register(MODULE_ID, "manageSiteVersion", {
+    name: "WORLD2WEB.Settings.ManageSiteVersion.Name",
+    hint: "WORLD2WEB.Settings.ManageSiteVersion.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
   });
   game.settings.register(MODULE_ID, "githubToken", {
     name: "WORLD2WEB.Settings.GithubToken.Name",
@@ -476,6 +488,11 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   const allowThemeOverride = game.settings.get(MODULE_ID, "allowThemeOverride");
   files.push(buildSiteConfigFile({ theme, siteName, journalsSegment, allowThemeOverride }));
 
+  // Pushed last, so the host's final rebuild of this publish already has
+  // every new post in it.
+  const sitePin = await planSitePinFile(config);
+  if (sitePin) files.push(sitePin.file);
+
   const { pushed, hashes } = await pushFiles({
     owner: config.owner,
     repo: config.repo,
@@ -542,6 +559,10 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // isPagePending()).
   await markSynced();
 
+  if (sitePin && pushed.includes(sitePin.file.path)) {
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
+  }
+
   const totalRetracted = retractedCount + renamedRetractedCount;
   const total = pushed.length + pushedAssets.length + totalRetracted;
   ui.notifications.info(
@@ -551,6 +572,36 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
         : t("Notify.UpToDate")
     }`,
   );
+}
+
+/**
+ * Works out whether this publish should also update the site repo's package.json to the
+ * `@world2web/site` version matching this module -- see site-version.js. Never fails the publish:
+ * any problem is logged and the publish goes ahead without it.
+ *
+ * Skipped when the setting is off, when the matching version isn't on npm (a development build,
+ * or an unpublished release -- pinning to it would break every host build), or when the repo
+ * doesn't use the site package at all.
+ *
+ * @param {{owner: string, repo: string, token: string, branch: string}} config
+ * @returns {Promise<{file: {path: string, content: string}, version: string}|null>}
+ */
+async function planSitePinFile(config) {
+  try {
+    if (!game.settings.get(MODULE_ID, "manageSiteVersion")) return null;
+    const version = game.modules.get(MODULE_ID)?.version;
+    if (!version || !(await isSiteVersionPublished(version))) return null;
+
+    const existing = await readRepoFile({ ...config, path: "package.json" });
+    const plan = planSitePin(existing?.content ?? null, { siteVersion: version });
+    if (plan.status === "invalid") {
+      console.warn(`${MODULE_ID} | The site's package.json couldn't be parsed; leaving it alone.`);
+    }
+    return plan.status === "updated" ? { file: { path: "package.json", content: plan.content }, version } : null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Couldn't check the site's package version; skipping.`, err);
+    return null;
+  }
 }
 
 Hooks.once("ready", () => {

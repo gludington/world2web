@@ -376,4 +376,16 @@ export async function pushBinaryAssets({ owner, repo, token, branch, files, comm
 
 // Functions that only github.test.mjs needs to see -- not part of this module's real API
 // (pushFiles/pushBinaryAssets/retractDeletedPost above), never imported from anywhere else.
+/**
+ * Reads one text file from the repo, or `null` if it doesn't exist. Public wrapper around the
+ * same lookup `putFile` uses internally.
+ *
+ * @param {RepoTarget & {path: string}} args
+ * @returns {Promise<{sha: string, content: string}|null>}
+ * @throws {Error} On any non-OK response other than a 404.
+ */
+export async function readRepoFile(args) {
+  return getExistingFile(args);
+}
+
 export const _test = { putFile };

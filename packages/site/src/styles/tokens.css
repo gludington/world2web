@@ -1,0 +1,57 @@
+:root {
+  --color-font-heading: 'Cinzel', 'Georgia', serif;
+  --color-font-body: 'EB Garamond', 'Garamond', serif;
+  --color-bg: #fdfaf2;
+  --color-card-bg: #f5eedc;
+  --color-text-main: #2b1f14;
+  --color-text-muted: #5c534c;
+  --color-accent: #5c1d16;
+  --color-border: #b89047;
+  --card-radius: 0px;
+  --avatar-radius: 0px;
+}
+
+/* --- Default / D&D Parchment Theme Presets --- */
+html,
+html[data-theme="dnd"] {
+  --color-font-heading: 'Cinzel', 'Georgia', serif;
+  --color-font-body: 'EB Garamond', 'Garamond', serif;
+  --color-bg: #fdfaf2;
+  --color-card-bg: #f5eedc;
+  --color-text-main: #2b1f14;
+  --color-text-muted: #5c534c;
+  --color-accent: #5c1d16;
+  --color-border: #b89047;
+  --card-radius: 0px;
+  --avatar-radius: 0px;
+}
+
+/* --- Ravenloft / Gothic Horror Theme --- */
+html[data-theme="ravenloft"] {
+  --color-font-heading: 'EB Garamond', 'Garamond', serif;
+  --color-font-body: 'EB Garamond', 'Garamond', serif;
+  --color-bg: #111113;           /* Pitch black night */
+  --color-card-bg: #17171b;      /* Weathered crypt stone */
+  --color-text-main: #d1c4b9;    /* Aged bone white */
+  --color-text-muted: #6e6761;   /* Cold fog gray */
+  --color-accent: #8c1417;       /* Deep coagulated crimson */
+  --color-border: #3b3a42;       /* Cold iron rail gray */
+  --card-radius: 2px;
+  --avatar-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; /* Portrait oval frame */
+}
+
+
+/* --- Sci-Fi HUD Terminal Theme Presets --- */
+html[data-theme="scifi"] {
+  --color-font-heading: 'Courier New', 'Lucida Console', monospace;
+  --color-font-body: 'Courier New', Courier, monospace;
+  --color-bg: #04060e;
+  --color-card-bg: #0b1121;
+  --color-text-main: #a6bceb;
+  --color-text-muted: #546c9c;
+  --color-accent: #00ffcc;
+  --color-border: #00ffcc;
+  --card-radius: 6px;
+  --avatar-radius: 4px;
+}
+
