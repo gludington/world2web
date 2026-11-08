@@ -133,7 +133,7 @@ is a real, installable npm version, but `npm install @world2web/site` (the `late
 picks it, and users' sites only ever pin the exact version of the module they run.
 
 ```sh
-cd packages/site && npm pkg set version=1.0.0-rc.1 && npm publish --tag next; git checkout package.json
+cd packages/site && npm pkg set version=0.21.0-rc.1 && npm publish --tag next; git checkout package.json
 ```
 
 Then set the same version in `module.json` (and `packages/site/package.json`, for the lockstep
@@ -152,6 +152,10 @@ and `SITE_ASTRO_VERSION` together. Users' repos have no lockfile, so the module 
 version in them too.
 
 ## Releasing
+
+Versions stay below 1.0 while World2Web is in its own development and testing; 1.0.0 is the
+release submitted to Foundry's package listing. Keep counting up from the last release (Foundry
+only offers an update to a higher version number).
 
 1. Work on a feature branch and open a PR to `main`. Squash-merge.
 2. To release, bump `version` in **both** `module.json` and `packages/site/package.json` in that
