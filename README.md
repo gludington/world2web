@@ -59,25 +59,30 @@ A chronological list of posts on the homepage, a page per journal, per-author an
 sections that follow your Foundry folder structure, full-text search, links between posts (Foundry
 `@UUID` links become real links), and a choice of built-in themes.
 
+## How your site stays up to date
+
+Your site's GitHub repository holds only your content and a few lines of configuration. The
+site's pages, styles and search come from the
+[`@world2web/site`](https://www.npmjs.com/package/@world2web/site) package, released together
+with this module under the same version number. Each **Publish to Web** sets your site to the
+package version matching your installed module, so updating World2Web in Foundry also updates
+your site. To stop that, turn off **Keep Site Up to Date** in the module settings.
+
 ## Customizing your site (advanced)
 
 Most people never need this. Site name, theme and URL layout are all module settings in Foundry.
 
-For full control, your site is an ordinary [Astro](https://astro.build/) project in your own
-GitHub repository, generated from
-[world2web-site-template](https://github.com/gludington/world2web-site-template). You can:
-
-- **Edit your own site's repository directly**: layout, pages and styles. World2Web only ever
-  writes to `content/` (your posts) and `public/assets/` (their images), so your changes
-  elsewhere are never overwritten by a publish. Start with
-  the template's README, and with `src/styles/README.md` for theming.
-- **Make your own template.** Copy world2web-site-template, customize it, and use it for every
-  campaign site you create.
 - **Preview locally before publishing.** Turn on **Enable Dev Mode** in the module settings to get
-  a **Dev Sync** button. It downloads what would be published as a JSON file, which the template's
-  `scripts/ingest.js` turns into content for `npm run dev`. No GitHub involved.
+  a **Dev Sync** button. It downloads what would be published as a JSON file. In a local clone of
+  your site repo, `npx world2web-ingest <file>` turns it into content, and `npm run dev` shows the
+  result. No GitHub involved.
+- **Take over the site's code.** Copy the source of
+  [`packages/site`](https://github.com/gludington/world2web/tree/main/packages/site) into your
+  site repo and turn off **Keep Site Up to Date**. From then on the site's code is yours to change,
+  and updating it is up to you. World2Web keeps writing only `content/` (your posts) and
+  `public/assets/` (their images).
 
-You need some familiarity with Git, Node.js and Astro for any of these.
+You need some familiarity with Git, Node.js and Astro for either of these.
 
 ## Security note
 
@@ -90,4 +95,5 @@ token here.
 
 Found a bug or have a question? [Open an issue](https://github.com/gludington/world2web/issues).
 
-Contributors: see [DEVELOPMENT.md](DEVELOPMENT.md) for architecture, the data format and tests.
+Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and releases, and
+[DEVELOPMENT.md](DEVELOPMENT.md) for architecture and the data format.

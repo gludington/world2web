@@ -32,7 +32,7 @@
     "astro": "7.2.4"
   },
   "dependencies": {
-    "pagefind": "^1.5.2"
+    "pagefind": "1.6.0"
   },
   "homepage": "https://world2web.loodingdongs.com"
 }
