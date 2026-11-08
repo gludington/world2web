@@ -94,19 +94,49 @@ integration's `astro:server:setup` hook). Limitations:
 
 ### A site change on a real host, before releasing
 
-Point a test site's `package.json` at a preview build instead of a version number, and push:
+`pnpm site:dev` can't tell you whether a host installs and builds the package correctly. To try
+that without an npm release, vendor the package into a test site repo:
+
+```sh
+pnpm site:vendor gludington/tryvercel     # or a path to a local clone
+```
+
+It packs `packages/site` from whatever is checked out (uncommitted changes included), commits it
+into the site repo as `vendor/world2web-site.tgz`, points `@world2web/site` at
+`file:./vendor/world2web-site.tgz`, and pushes. The host rebuilds with exactly that code. Add
+`--no-push` to commit without pushing. It refuses any repo that doesn't already use
+`@world2web/site`. The commit message records the branch and commit it was packed from.
+
+Publish to Web leaves a `file:` dependency alone. The module only manages a dependency that's a
+plain version number like `1.0.0`, and treats a URL, `file:`/`link:` path, git URL or range as set
+by hand (see `scripts/site-version.js`). So this doesn't exercise version pinning; that needs a
+real version on npm (see "Release candidates" below). To put a test site back on a release, set
+the dependency to that version and delete `vendor/`.
+
+An alternative that needs no commits to the site repo is a preview build from
+[pkg.pr.new](https://pkg.pr.new), which gives every push to a branch an installable URL:
 
 ```json
 "@world2web/site": "https://pkg.pr.new/gludington/world2web/@world2web/site@<commit>"
 ```
 
-Preview builds come from [pkg.pr.new](https://pkg.pr.new): every push to a branch other than
-`main` gets one, without publishing to npm. *Not set up yet: it needs the pkg.pr.new GitHub App
-installed on this repo, then a small workflow.*
+*Not set up yet: it needs the pkg.pr.new GitHub App installed on this repo, then a small
+workflow.*
 
-Publish to Web leaves this alone. The module only manages a dependency that's a plain version
-number like `1.0.0`. A URL, a `file:` or `link:` path, a git URL or a range counts as set by hand
-(see `scripts/site-version.js`). Put the plain version back when you're done testing.
+### Release candidates (testing version pinning)
+
+To test the whole chain including version pinning, publish a prerelease under the `next` tag. It
+is a real, installable npm version, but `npm install @world2web/site` (the `latest` tag) never
+picks it, and users' sites only ever pin the exact version of the module they run.
+
+```sh
+cd packages/site && npm pkg set version=1.0.0-rc.1 && npm publish --tag next; git checkout package.json
+```
+
+Then set the same version in `module.json` (and `packages/site/package.json`, for the lockstep
+test) on a test branch, point a test site at an older rc, and Publish to Web: the module should
+update the site's `package.json` to the new rc. Each rc uses up its version number for good, so
+do this once before a release, not for every change.
 
 ## Version lockstep
 
