@@ -1,6 +1,6 @@
 {
   "name": "@world2web/site",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "The World2Web campaign site, as an Astro integration. Renders journals published from Foundry VTT by the World2Web module.",
   "type": "module",
   "license": "MIT",
