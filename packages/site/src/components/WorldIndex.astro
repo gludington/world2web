@@ -42,7 +42,11 @@ const recentPostsItems = allPosts.slice(0, 5).map((post) => ({
 // untouched. The Foundry module keeps this to one journal per world; if
 // stale content ever leaves two, the most recently updated one wins, so the
 // choice is deterministic.
-const FEATURED_LIMIT = 10;
+// Only "above" is capped: there, a long featured journal (say, a whole
+// campaign's session notes) would push Recent Posts far down the page. With
+// "replace" the featured journal *is* the homepage -- typically a guide or
+// "Start Here" journal meant to be read in full -- so all of it is shown.
+const FEATURED_LIMIT_ABOVE = 10;
 const featuredCandidate = allPosts
   .filter((post) => post.data.homepage !== "none")
   .reduce<(typeof allPosts)[number] | null>(
@@ -59,8 +63,9 @@ const featuredPosts = featuredJournal
       featuredJournal.postOrder,
     )
   : [];
+const featuredLimit = featuredMode === "above" ? FEATURED_LIMIT_ABOVE : Infinity;
 const featuredItems = [
-  ...featuredPosts.slice(0, FEATURED_LIMIT).map((post) => ({
+  ...featuredPosts.slice(0, featuredLimit).map((post) => ({
     title: post.data.title,
     href: postRoute(post.data),
     authorName: post.data.author?.name,
@@ -69,7 +74,7 @@ const featuredItems = [
   })),
   // A long featured journal (say, a whole campaign's session notes) would
   // otherwise push everything else far down the page.
-  ...(featuredJournal && featuredPosts.length > FEATURED_LIMIT
+  ...(featuredJournal && featuredPosts.length > featuredLimit
     ? [{ title: `All ${featuredPosts.length} posts in ${featuredJournal.journalTitle} →`, href: journalRoute(featuredJournal) }]
     : []),
 ];
