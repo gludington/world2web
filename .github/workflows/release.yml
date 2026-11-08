@@ -11,6 +11,9 @@ on:
 
 permissions:
   contents: write
+  # npm provenance: lets npm show that each @world2web/site release was
+  # built by this workflow from this repo.
+  id-token: write
 
 jobs:
   release:
@@ -18,15 +21,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # npm trusted publishing (OIDC, no stored token) needs npm 11.5.1+;
+      # Node 22's bundled npm is older.
+      - name: Update npm for trusted publishing
+        run: npm install -g npm@latest
 
       # No dependencies to install -- scripts/*.test.mjs run on Node's
       # built-in test runner alone. A release with failing tests never
       # gets created.
       - name: Run tests
         run: npm test
+
+      # The site package ships in lockstep with the module (same version --
+      # scripts/site-version.test.mjs enforces it), so a site that doesn't
+      # build blocks the module release too. Built from the in-repo starter,
+      # which is what a user's thin site repo looks like.
+      - name: Build the site package via the starter
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm site:build
 
       - name: Read version from module.json
         id: version
@@ -71,6 +92,7 @@ jobs:
           jq --arg dl "https://github.com/${repo}/releases/download/v${version}/module.zip" \
              '.download = $dl' module.json > release/module.json
           cp README.md release/README.md
+          cp LICENSE release/LICENSE
           cp lang/en.json release/lang/en.json
           cp scripts/*.js release/scripts/
 
@@ -87,6 +109,30 @@ jobs:
           fi
 
           ( cd release && zip -r ../module.zip . )
+
+      # Authenticates through npm trusted publishing: npm accepts publishes of
+      # @world2web/site from this repo's release.yml (configured on the
+      # package's settings page on npmjs.com), proven by GitHub's OIDC token
+      # (the id-token: write permission above). No npm token is stored
+      # anywhere, and provenance is attached automatically.
+      #
+      # Before the GitHub release, deliberately: Publish to Web pins a site
+      # to the @world2web/site version matching the installed module, but
+      # only once that version is on npm. Publishing it first means it's
+      # there by the time anyone can install this module version. If this
+      # fails, the module release doesn't happen either. Skipped when the
+      # version is already on npm, so re-running after a later step failed
+      # doesn't trip over its own earlier publish.
+      - name: Publish @world2web/site to npm
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          version="${{ steps.version.outputs.value }}"
+          if npm view "@world2web/site@${version}" version >/dev/null 2>&1; then
+            echo "@world2web/site@${version} is already on npm -- skipping."
+          else
+            cd packages/site
+            npm publish --access public
+          fi
 
       - name: Create GitHub release
         if: steps.check.outputs.exists == 'false'

@@ -1,0 +1,102 @@
+---
+// ContentPanel.astro
+interface Item {
+  title: string;
+  href: string;
+  metaType?: 'section' | 'journal' | 'post';
+  authorName?: string;
+  authorHref?: string;
+  authorImage?: string;
+  subLabels?: string[];
+  dateLabel?: string;
+  frontImage?: string;
+}
+
+interface Props {
+  title: string;
+  items: Item[];
+}
+
+const { title, items } = Astro.props;
+---
+
+{ items.length > 0 && (
+  <section class="panel">
+    <h2 class="panel-title">{title}</h2>
+    <ul class="entry-list">
+      {items.map((item) => (
+        <li class="entry">
+          {item.frontImage && <img class="entry-thumb" src={item.frontImage} alt="" />}
+          <div class="entry-body">
+            <a class="entry-title" href={item.href}>{item.title}</a>
+
+            <div class="meta">
+              {/* 1. If it's a raw section label */}
+              {item.metaType === 'section' && <span>Section</span>}
+
+              {/* 2. If it contains author information */}
+              {item.authorName && (
+                <>
+                  {item.authorImage && <img class="avatar" src={item.authorImage} alt="" />}
+                  by <a href={item.authorHref}>{item.authorName}</a>
+                </>
+              )}
+
+              {/* 3. If it contains category subpaths (like JournalsInSection) */}
+              {item.subLabels && item.subLabels.length > 0 && (
+                <> · in {item.subLabels.join(" / ")}</>
+              )}
+
+              {/* 4. If it contains a publishing date stamp */}
+              {item.dateLabel && <> · <time>{item.dateLabel}</time></>}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  </section>
+) }
+
+<style>
+  /* --- Fully Encapsulated Layout Skeleton --- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 1rem;
+  }
+
+  .entry-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem; 
+  }
+
+  .entry {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .entry-thumb {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    flex-shrink: 0;
+    border: var(--card-border, none);
+  }
+
+  .entry-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .entry-title {
+    text-decoration: none;
+  }
+</style>

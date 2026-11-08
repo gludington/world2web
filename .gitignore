@@ -1,0 +1,3 @@
+node_modules/
+# Local test content for the starter -- real sites get theirs from Foundry.
+packages/starter/content/

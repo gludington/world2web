@@ -1,0 +1,38 @@
+name: Preview build
+
+# Publishes every push (except to main) and every pull request as an
+# installable preview of @world2web/site on pkg.pr.new -- no npm release, no
+# version number used up. Point a test site at the printed URL to try a change
+# on a real host. Releases from main go to npm through release.yml instead.
+#
+# Needs the pkg-pr-new GitHub App installed on this repo.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+
+# pkg.pr.new authenticates through its GitHub App, not this workflow's token.
+permissions: {}
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Same gate as a release: a preview that doesn't build isn't worth
+      # installing anywhere.
+      - name: Build the site package via the starter
+        run: pnpm site:build
+
+      - name: Publish the preview
+        run: pnpm exec pkg-pr-new publish --pnpm --commentWithSha './packages/site'

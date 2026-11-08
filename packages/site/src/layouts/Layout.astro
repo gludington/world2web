@@ -1,0 +1,108 @@
+---
+import { getSiteConfig, resolveDataTheme } from "../lib/config";
+import { searchRoute } from "../lib/routes";
+import "../styles/tokens.css";
+import "../styles/base.css";
+import ThemeSelector from "../components/ThemeSelector.astro";
+
+interface Props {
+  title: string;
+  // Pagefind (see README.md's "Search" section) indexes a page's
+  // whole <body> by default. Most page types here are pure navigation --
+  // the same post titles/links repeated across the homepage, journal
+  // archives, author/tag archives, and section pages -- so indexing all
+  // of them would flood search results with near-duplicate low-value
+  // hits for every single query. Default false (excluded via
+  // data-pagefind-ignore); only a page with genuinely unique prose of
+  // its own (a single post, an author's bio) opts in with searchable,
+  // and even then scopes indexing further to just that content via its
+  // own data-pagefind-body, not this whole <body>.
+  searchable?: boolean;
+}
+const { title, searchable = false } = Astro.props;
+const siteConfig = getSiteConfig();
+// Selects a :root[data-theme="..."] block already compiled into
+// styles/tokens.css -- see resolveDataTheme()'s doc comment in lib/config.ts.
+const dataTheme = resolveDataTheme(siteConfig.theme);
+// The header search box below submits here as a plain GET (?q=...), no JS
+// required on this page -- src/pages/search/index.astro reads it back out
+// of location.search and calls PagefindUI's triggerSearch(). Hidden only on
+// that page itself, since it already has its own (bigger) search input.
+const isSearchPage = Astro.url.pathname === searchRoute();
+---
+
+<!doctype html>
+<html lang="en" data-theme={dataTheme ?? undefined}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title === siteConfig.siteName ? title : `${title} · ${siteConfig.siteName}`}</title>
+    {/* Visitor override is opt-in (Foundry's "Allow Visitor Theme
+        Override" setting) -- when it's off, Site Theme is authoritative
+        for everyone and neither this script nor the picker below ships at
+        all, not just hidden. */}
+    {siteConfig.allowThemeOverride && (
+      <script is:inline>
+        try {
+          const savedTheme = localStorage.getItem("site-theme");
+          if (savedTheme) {
+            document.documentElement.setAttribute("data-theme", savedTheme);
+          }
+        } catch {
+          // Storage inaccessible (e.g. some private-browsing modes) -- fall
+          // back to whatever Site Theme baked into the page at build time.
+        }
+      </script>
+    )}
+    {/* The built-in default look's two type families -- an inscriptional
+        display face for headings, an old-style serif for body text. Both
+        have a same-era system-font fallback in styles/tokens.css, so
+        nothing renders unstyled while these load, and a theme that
+        overrides --font-heading/--font-body entirely never pays for this
+        request having mattered at all. */}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=EB+Garamond:ital,wght@0,400;0,600;1,400&display=swap"
+    />
+  </head>
+  <body data-pagefind-ignore={searchable ? undefined : ""}>
+    <main>
+      <div class="header-row">
+        <div class="header-search">
+          {!isSearchPage && (
+            <form class="site-search" action={searchRoute()} method="get">
+              <input type="search" name="q" placeholder="Search…" aria-label="Search" />
+            </form>
+          )}
+        </div>
+        <div class="header-theme">
+          {siteConfig.allowThemeOverride && <ThemeSelector />}
+        </div>
+      </div>
+      <slot />
+    </main>
+  </body>
+</html>
+
+<style>
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .site-search input {
+    font: inherit;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--color-border, #ccc);
+    border-radius: 4px;
+    background: var(--color-card-bg, #fff);
+    color: inherit;
+    width: 12rem;
+    max-width: 40vw;
+  }
+</style>

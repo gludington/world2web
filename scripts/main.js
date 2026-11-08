@@ -8,7 +8,8 @@ import {
   resolveDefaultRoot,
 } from "./collector.js";
 import { renderPayloadToFiles, buildSiteConfigFile } from "./render.js";
-import { pushFiles, pushBinaryAssets, retractDeletedPost } from "./github.js";
+import { pushFiles, pushBinaryAssets, retractDeletedPost, readRepoFile, checkRepoAccess } from "./github.js";
+import { planSitePin, isSiteVersionPublished } from "./site-version.js";
 import { collectAssets, rewriteAssetReferences } from "./assets.js";
 import { scopedDeletionUuids } from "./ownership.js";
 
@@ -224,6 +225,17 @@ Hooks.once("init", () => {
     config: true,
     type: String,
     default: "main",
+  });
+  // On by default: Publish to Web keeps the site's @world2web/site
+  // dependency on the version matching this module (see site-version.js).
+  // Off is for power users who've taken over their site's code themselves.
+  game.settings.register(MODULE_ID, "manageSiteVersion", {
+    name: "WORLD2WEB.Settings.ManageSiteVersion.Name",
+    hint: "WORLD2WEB.Settings.ManageSiteVersion.Hint",
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
   });
   game.settings.register(MODULE_ID, "githubToken", {
     name: "WORLD2WEB.Settings.GithubToken.Name",
@@ -476,6 +488,11 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   const allowThemeOverride = game.settings.get(MODULE_ID, "allowThemeOverride");
   files.push(buildSiteConfigFile({ theme, siteName, journalsSegment, allowThemeOverride }));
 
+  // Pushed last, so the host's final rebuild of this publish already has
+  // every new post in it.
+  const sitePin = await planSitePinFile(config);
+  if (sitePin) files.push(sitePin.file);
+
   const { pushed, hashes } = await pushFiles({
     owner: config.owner,
     repo: config.repo,
@@ -542,6 +559,10 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // isPagePending()).
   await markSynced();
 
+  if (sitePin && pushed.includes(sitePin.file.path)) {
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
+  }
+
   const totalRetracted = retractedCount + renamedRetractedCount;
   const total = pushed.length + pushedAssets.length + totalRetracted;
   ui.notifications.info(
@@ -551,6 +572,36 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
         : t("Notify.UpToDate")
     }`,
   );
+}
+
+/**
+ * Works out whether this publish should also update the site repo's package.json to the
+ * `@world2web/site` version matching this module -- see site-version.js. Never fails the publish:
+ * any problem is logged and the publish goes ahead without it.
+ *
+ * Skipped when the setting is off, when the matching version isn't on npm (a development build,
+ * or an unpublished release -- pinning to it would break every host build), or when the repo
+ * doesn't use the site package at all.
+ *
+ * @param {{owner: string, repo: string, token: string, branch: string}} config
+ * @returns {Promise<{file: {path: string, content: string}, version: string}|null>}
+ */
+async function planSitePinFile(config) {
+  try {
+    if (!game.settings.get(MODULE_ID, "manageSiteVersion")) return null;
+    const version = game.modules.get(MODULE_ID)?.version;
+    if (!version || !(await isSiteVersionPublished(version))) return null;
+
+    const existing = await readRepoFile({ ...config, path: "package.json" });
+    const plan = planSitePin(existing?.content ?? null, { siteVersion: version });
+    if (plan.status === "invalid") {
+      console.warn(`${MODULE_ID} | The site's package.json couldn't be parsed; leaving it alone.`);
+    }
+    return plan.status === "updated" ? { file: { path: "package.json", content: plan.content }, version } : null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Couldn't check the site's package version; skipping.`, err);
+    return null;
+  }
 }
 
 Hooks.once("ready", () => {
@@ -952,9 +1003,11 @@ async function openDeployStep2CreateToken(owner, repoName) {
  *   retyping the other two.
  * @returns {Promise<void>}
  */
-async function openDeployStep3SaveSettings(defaults) {
+async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
+  const error = errorMessage ? `<p class="notification error">${errorMessage}</p>` : "";
   const content = `
     <p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>
+    ${error}
     <p>${t("Dialog.DeploySiteSaveIntro")}</p>
     <div class="form-group">
       <label>${t("Settings.GithubOwner.Name")}</label>
@@ -987,11 +1040,47 @@ async function openDeployStep3SaveSettings(defaults) {
           token: button.form.elements.token.value.trim(),
         }),
       },
+      // Only offered after a failed connection check -- an escape hatch for
+      // a check that's wrong (GitHub API briefly unreachable, etc.), not the
+      // normal path.
+      ...(errorMessage
+        ? [
+            {
+              action: "save-anyway",
+              label: "WORLD2WEB.Dialog.SaveAnyway",
+              icon: "fa-solid fa-triangle-exclamation",
+              callback: (event, button) => ({
+                force: true,
+                owner: button.form.elements.owner.value.trim(),
+                repo: button.form.elements.repo.value.trim(),
+                token: button.form.elements.token.value.trim(),
+              }),
+            },
+          ]
+        : []),
       { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
     ],
     rejectClose: false,
   });
-  if (!result) return;
+  if (!result || typeof result === "string") return;
+
+  // Read-only check before saving: catches a mistyped repo name, a token not
+  // granted this repo, or a missing Contents permission now, with a specific
+  // message, instead of as a vague failure on the first Publish to Web. On
+  // failure, re-open this same step with everything still filled in.
+  if (!result.force) {
+    const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
+    const check = await checkRepoAccess({ ...result, branch });
+    if (!check.ok) {
+      const message = t(`Dialog.RepoCheck.${check.reason}`, {
+        owner: escapeHtml(result.owner),
+        repo: escapeHtml(result.repo),
+        branch: escapeHtml(branch),
+        status: check.status ?? "",
+      });
+      return openDeployStep3SaveSettings(result, message);
+    }
+  }
 
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
@@ -1101,6 +1190,21 @@ async function openJournalConfigDialog(entry) {
         </select>
         <p class="hint">${t("Dialog.PostOrderHint")}</p>
       </div>
+      ${
+        // GM-only: the homepage is site-wide, so a player allowed to
+        // self-publish their own journal shouldn't be able to take it over.
+        game.user.isGM
+          ? `<div class="form-group">
+        <label>${t("Dialog.HomepageLabel")}</label>
+        <select name="homepage">
+          <option value="none" ${!["above", "replace"].includes(config.homepage) ? "selected" : ""}>${t("Dialog.HomepageNone")}</option>
+          <option value="above" ${config.homepage === "above" ? "selected" : ""}>${t("Dialog.HomepageAbove")}</option>
+          <option value="replace" ${config.homepage === "replace" ? "selected" : ""}>${t("Dialog.HomepageReplace")}</option>
+        </select>
+        <p class="hint">${t("Dialog.HomepageHint")}</p>
+      </div>`
+          : ""
+      }
     </fieldset>
   `;
 
@@ -1122,6 +1226,8 @@ async function openJournalConfigDialog(entry) {
           root: button.form.elements.root.value,
           tags: button.form.elements.tags.value,
           postOrder: button.form.elements.postOrder.value,
+          // Absent for non-GMs (the field isn't rendered for them).
+          homepage: button.form.elements.homepage?.value,
         }),
       },
       { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
@@ -1129,7 +1235,9 @@ async function openJournalConfigDialog(entry) {
     rejectClose: false,
   });
 
-  if (!result) return; // cancelled or closed
+  // Cancel has no callback, so DialogV2 resolves with its action name
+  // ("cancel") rather than null -- treat that the same as closing.
+  if (!result || typeof result === "string") return; // cancelled or closed
 
   const tags = String(result.tags ?? "")
     .split(",")
@@ -1154,7 +1262,28 @@ async function openJournalConfigDialog(entry) {
     flagsUpdate.publishedAt = Date.now();
   }
 
+  // Only written when the field was shown (GM), so a player's save never
+  // touches it.
+  const homepage =
+    game.user.isGM && result.homepage !== undefined
+      ? ["above", "replace"].includes(result.homepage)
+        ? result.homepage
+        : "none"
+      : undefined;
+  if (homepage !== undefined) flagsUpdate.homepage = homepage;
+
   await entry.update({ flags: { [MODULE_ID]: flagsUpdate } });
+
+  // At most one homepage journal per world: featuring this one un-features
+  // any other, rather than leaving the site to pick between two.
+  if (homepage && homepage !== "none") {
+    for (const other of game.journal.contents) {
+      if (other === entry) continue;
+      if (["above", "replace"].includes(other.flags?.[MODULE_ID]?.homepage)) {
+        await other.update({ flags: { [MODULE_ID]: { homepage: "none" } } });
+      }
+    }
+  }
 
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.PublishingSettingsSaved", { name: entry.name })}`);
 }
@@ -1265,7 +1394,9 @@ async function openPostConfigDialog(page) {
     rejectClose: false,
   });
 
-  if (!result) return; // cancelled or closed
+  // Cancel has no callback, so DialogV2 resolves with its action name
+  // ("cancel") rather than null -- treat that the same as closing.
+  if (!result || typeof result === "string") return; // cancelled or closed
 
   const tags = String(result.tags ?? "")
     .split(",")
@@ -1303,7 +1434,7 @@ async function openPostConfigDialog(page) {
 // UUID directly or by dragging an Actor onto it. Delegated on `document`
 // rather than attached per-dialog-render: DialogV2.wait()'s `content` is a
 // plain HTML string with no confirmed hook for running code once it's
-// actually in the DOM (these dialogs are already flagged in README.md as
+// actually in the DOM (these dialogs are already flagged in DEVELOPMENT.md as
 // unverified against a live instance for exactly this kind of uncertainty).
 // A single delegated listener, registered once at module load, sidesteps
 // needing that hook at all -- it works identically whichever dialog is

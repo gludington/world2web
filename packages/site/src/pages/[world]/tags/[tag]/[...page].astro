@@ -1,0 +1,107 @@
+---
+import type { GetStaticPathsOptions, Page } from "astro";
+import type { CollectionEntry } from "astro:content";
+import Layout from "../../../../layouts/Layout.astro";
+import { getSiteConfig } from "../../../../lib/config";
+import { getPublishedPosts } from "../../../../lib/posts";
+import { postRoute, authorRoute, journalRoute, formatDate } from "../../../../lib/routes";
+import { slugifyTag } from "../../../../lib/tags";
+import Breadcrumbs from "../../../../components/Breadcrumbs.astro";
+import ContentPanel from "../../../../components/ContentPanel.astro";
+import Pagination from "../../../../components/Pagination.astro";
+
+const siteName = getSiteConfig().siteName;
+
+// Every post tagged with a given tag, within one world. Tags aren't
+// pre-slugged in frontmatter (they're a freeform list, unlike
+// journalSlug/authorSlug) so slugifyTag() is applied here and, identically, on
+// each post page's tag links -- see lib/tags.ts. A post can carry more than
+// one tag, so unlike the journal/author archives, one post fans out into
+// multiple groups here.
+interface TagInfo {
+  world: string;
+  tagSlug: string;
+  name: string;
+}
+
+export async function getStaticPaths({ paginate }: GetStaticPathsOptions) {
+  const PAGE_SIZE = 10;
+  const posts = await getPublishedPosts();
+  const groups = new Map<string, { tag: TagInfo; posts: CollectionEntry<"posts">[] }>();
+
+  for (const post of posts) {
+    for (const tagName of post.data.tags) {
+      const key = `${post.data.world}/${slugifyTag(tagName)}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          tag: { world: post.data.world, tagSlug: slugifyTag(tagName), name: tagName },
+          posts: [],
+        });
+      }
+      groups.get(key)!.posts.push(post);
+    }
+  }
+
+  return Array.from(groups.values()).flatMap(({ tag, posts: tagPosts }) => {
+    const sorted = tagPosts.sort((a, b) => b.data.publishedAt - a.data.publishedAt);
+    return paginate(sorted, {
+      params: { world: tag.world, tag: tag.tagSlug },
+      props: { tag },
+      pageSize: PAGE_SIZE,
+    });
+  });
+}
+
+const { tag } = Astro.props as { tag: TagInfo };
+const { page } = Astro.props as { page: Page<CollectionEntry<"posts">> };
+
+// Map data arrays cleanly without touching your original data objects above
+const taggedItems = page.data.map((post) => ({
+  title: post.data.title,
+  href: postRoute(post.data),
+  authorName: post.data.author.name,
+  authorHref: authorRoute(post.data),
+  authorImage: post.data.author.image,
+  subLabels: [post.data.journalTitle],
+  dateLabel: formatDate(post.data.publishedAt),
+  frontImage: post.data.frontImage
+}));
+---
+
+<Layout title={`Tag: ${tag.name}`}>
+  <Breadcrumbs siteName={siteName} crumbs={[]} currentLabel={tag.name}/>
+  
+  <h1>{tag.name} <span class="header-count">({page.total})</span></h1>
+  
+  <ContentPanel title="" items={taggedItems} />
+
+  { page.lastPage > 1 && (
+    <Pagination 
+      prevUrl={page.url.prev ?? null} 
+      nextUrl={page.url.next ?? null} 
+      pageNum={page.currentPage} 
+      totalPages={page.lastPage} 
+    />
+  ) }
+</Layout>
+
+<style>
+  h1 {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 2.5rem;
+  }
+
+  .header-count {
+    font-family: var(--color-font-body);
+    font-size: 1.15rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+  }
+
+  /* Structural selector to mask double borders directly below the main page title */
+  :global(h1 + .panel > .panel-title) {
+    display: none;
+  }
+</style>

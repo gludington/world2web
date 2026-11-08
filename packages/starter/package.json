@@ -1,0 +1,22 @@
+{
+  "name": "world2web-starter",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "dev:search": "astro build && astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "ingest": "world2web-ingest"
+  },
+  "dependencies": {
+    "@world2web/site": "workspace:*",
+    "astro": "7.2.4"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

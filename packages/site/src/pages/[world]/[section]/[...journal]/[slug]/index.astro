@@ -1,0 +1,201 @@
+---
+import Layout from "../../../../../layouts/Layout.astro";
+import { getSiteConfig } from "../../../../../lib/config";
+import { getPublishedPosts } from "../../../../../lib/posts";
+import { postRoute, journalRoute, authorRoute, tagRoute, rootCrumbs, formatDate } from "../../../../../lib/routes";
+import { slugifyTag } from "../../../../../lib/tags";
+import { sortPostsForJournal } from "../../../../../lib/sections";
+import { buildContentLinkMap, resolveContentLinks } from "../../../../../lib/relationships";
+import Breadcrumbs from "../../../../../components/Breadcrumbs.astro";
+import type { CollectionEntry } from "astro:content";
+
+const siteName = getSiteConfig().siteName;
+
+export async function getStaticPaths() {
+  const { journalsSegment } = getSiteConfig();
+  // Not just filtering the listing -- excluding an unpublished post here
+  // means it gets no generated page at all, so its old URL 404s on the
+  // next deploy rather than staying reachable by direct link.
+  const posts = await getPublishedPosts();
+  // Built once here, not per post -- see buildContentLinkMap()'s doc
+  // comment.
+  const uuidToTarget = buildContentLinkMap(posts);
+
+  const postsByJournalUuid = new Map<string, CollectionEntry<"posts">[]>();
+  for (const post of posts) {
+    if (!postsByJournalUuid.has(post.data.journalUuid)) postsByJournalUuid.set(post.data.journalUuid, []);
+    postsByJournalUuid.get(post.data.journalUuid)!.push(post);
+  }
+
+  return posts.map((post) => {
+    // Same order as this journal's own archive page (sortPostsForJournal is
+    // shared with pages/[world]/[section]/[...journal].astro precisely so
+    // "next" here always means the post appearing next there too) --
+    // every post in a journal shares that journal's postOrder, copied onto each
+    // post's own frontmatter at publish time, so no separate JournalInfo
+    // lookup is needed to sort correctly.
+    const siblings = sortPostsForJournal(postsByJournalUuid.get(post.data.journalUuid)!, post.data.postOrder);
+    const index = siblings.findIndex((p) => p.id === post.id);
+    return {
+      params: { world: post.data.world, section: journalsSegment, journal: post.data.journalSlug, slug: post.data.slug },
+      props: {
+        post,
+        uuidToTarget,
+        prevPost: index > 0 ? siblings[index - 1] : null,
+        nextPost: index < siblings.length - 1 ? siblings[index + 1] : null,
+      },
+    };
+  });
+}
+
+const { post, uuidToTarget, prevPost, nextPost } = Astro.props;
+// post.html is raw HTML passthrough already --
+// nothing here is really "markdown" needing Astro's render()/<Content />
+// pipeline, so resolving Foundry's @UUID[] content-links is a plain string
+// rewrite on the body before injecting it directly.
+const resolvedHtml = resolveContentLinks(post.body ?? "", post.data.world, uuidToTarget);
+let processedHtml = resolvedHtml;
+const firstParagraphMatch = resolvedHtml.match(/<p[^>]*>([\s\S]*?)<\/p>/);
+
+if (firstParagraphMatch && firstParagraphMatch[1]) {
+  const innerHtml = firstParagraphMatch[1];
+  
+  // 1. Strip all internal HTML tags to isolate plain raw text content
+  const rawText = innerHtml.replace(/<[^>]*>/g, "").trim();
+  
+  // 2. Validate bounds: check length and ensure the first visible character is alphanumeric
+  if (rawText.length > 60 && /^[a-zA-Z0-9]/.test(rawText)) {
+    // Only inject the layout trigger class if both rules match perfectly
+    processedHtml = resolvedHtml.replace('<p>', '<p class="has-dropcap">');
+  }
+}
+const wasUpdated = post.data.updatedAt !== post.data.publishedAt;
+const crumbs = rootCrumbs(post.data).concat([
+  { label: post.data.journalTitle, href: journalRoute(post.data) },
+]);
+---
+
+<Layout title={post.data.title} searchable>
+  <!-- 1. The Modular Breadcrumbs call -->
+  <Breadcrumbs siteName={siteName} crumbs={crumbs} currentLabel={post.data.title} />
+
+  <!-- Pagefind indexing scope for this post -- see README.md's
+       "Search" section and Layout.astro's `searchable` prop doc comment.
+       Deliberately starts after Breadcrumbs (nav chrome, not content) and
+       covers everything a visitor would actually want matched: the front
+       image, title, author, tags, and prose body. journal/world have no
+       visible element of their own on this page worth reusing, so they're
+       hidden filter-only markers using Pagefind's explicit key:value
+       attribute syntax rather than anything relying on visible text. -->
+  <article data-pagefind-body>
+    <span hidden data-pagefind-filter={`journal:${post.data.journalTitle}`} />
+    <span hidden data-pagefind-filter={`world:${post.data.world}`} />
+
+    {post.data.frontImage && (
+      <img class="article-front-image" src={post.data.frontImage} alt="" data-pagefind-meta="image" />
+    )}
+
+    <!-- 2. The Unified Article Entry Header -->
+    <header class="article-header">
+      <h1 class="article-title" data-pagefind-meta="title">{post.data.title}</h1>
+
+      <div class="meta author-line">
+        {post.data.author.image && <img class="avatar" src={post.data.author.image} alt="" />}
+        <span>
+          by <a href={authorRoute(post.data)} data-pagefind-filter="author" data-pagefind-meta="author, authorUrl[href]">{post.data.author.name}</a>
+          · published {formatDate(post.data.publishedAt)}
+          {wasUpdated && <> · updated {formatDate(post.data.updatedAt)}</>}
+        </span>
+      </div>
+
+      { post.data.tags.length > 0 && (
+        <div class="meta tag-line">
+          <span class="tag-label">Tags:</span>
+          {post.data.tags.map((tagName, i) => (
+            <>
+              <a href={tagRoute({ world: post.data.world, tagSlug: slugifyTag(tagName) })} class="post-tag" data-pagefind-filter="tags">{tagName}</a>
+              {i < post.data.tags.length - 1 && <span class="tag-sep">,</span>}
+            </>
+          ))}
+        </div>
+      ) }
+    </header>
+
+    <!-- 3. The Protective HTML Prose Engine Container -->
+    <section class="prose" set:html={processedHtml} />
+  </article>
+
+  <!-- Outside the indexed <article> above -- nav chrome, not unique
+       content, same reasoning as this file's other pagefind comments.
+       Order matches this journal's own archive page (sortPostsForJournal is
+       shared with that page precisely so the two never disagree). -->
+  <nav class="post-nav" aria-label="Post navigation">
+    {prevPost ? (
+      <a href={postRoute(prevPost.data)} class="post-nav-link prev">
+        <span class="post-nav-label">&larr; Previous</span>
+        <span class="post-nav-title">{prevPost.data.title}</span>
+      </a>
+    ) : (
+      <span class="post-nav-link prev disabled">
+        <span class="post-nav-label">&larr; Previous</span>
+        <span class="post-nav-title">Start of {post.data.journalTitle}</span>
+      </span>
+    )}
+    {nextPost ? (
+      <a href={postRoute(nextPost.data)} class="post-nav-link next">
+        <span class="post-nav-label">Next &rarr;</span>
+        <span class="post-nav-title">{nextPost.data.title}</span>
+      </a>
+    ) : (
+      <span class="post-nav-link next disabled">
+        <span class="post-nav-label">Next &rarr;</span>
+        <span class="post-nav-title">End of {post.data.journalTitle}</span>
+      </span>
+    )}
+  </nav>
+</Layout>
+
+<style>
+  .post-nav {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    margin-top: 3.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--color-border);
+  }
+
+  .post-nav-link {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--card-radius, 0px);
+    text-decoration: none;
+  }
+
+  .post-nav-link.disabled {
+    opacity: 0.5;
+  }
+
+  .post-nav-link.disabled .post-nav-title {
+    color: var(--color-text-muted);
+  }
+
+  .next {
+    text-align: right;
+  }
+
+  .post-nav-label {
+    font-family: var(--color-font-heading);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+  }
+
+  .post-nav-title {
+    color: var(--color-text-main);
+  }
+</style>

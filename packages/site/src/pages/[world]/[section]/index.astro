@@ -1,0 +1,37 @@
+---
+import Layout from "../../../layouts/Layout.astro";
+import { getSiteConfig } from "../../../lib/config";
+import { getPublishedPosts } from "../../../lib/posts";
+import { worldLabel } from "../../../lib/routes";
+import WorldIndex from "../../../components/WorldIndex.astro";
+import Breadcrumbs from "../../../components/Breadcrumbs.astro";
+
+// Always generated, one per world with any published content, regardless
+// of how many worlds there are -- this is what /<world>/<journalsSegment>/
+// resolves to; before this file existed that URL 404'd, since
+// [...journal].astro's getStaticPaths() never emits an empty `journal` path. The
+// homepage links here directly when there's more than one world (see
+// pages/index.astro), or renders the same WorldIndex content itself
+// in-place when there's only one.
+export async function getStaticPaths() {
+  const { journalsSegment } = getSiteConfig();
+  const posts = await getPublishedPosts();
+  const worlds = [...new Set(posts.map((post) => post.data.world))];
+  return worlds.map((world) => ({
+    params: { world, section: journalsSegment },
+    props: { world },
+  }));
+}
+
+const { world } = Astro.props as { world: string };
+const siteName = getSiteConfig().siteName;
+---
+
+<Layout title={`${worldLabel(world)} · ${siteName}`}>
+  <Breadcrumbs 
+    siteName={siteName} 
+    crumbs={[]} 
+    currentLabel={worldLabel(world)}/>
+  <h1>{worldLabel(world)}</h1>
+  <WorldIndex world={world} />
+</Layout>

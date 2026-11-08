@@ -1,0 +1,106 @@
+---
+import type { CollectionEntry } from "astro:content";
+import { authorRoute } from "../lib/routes";
+
+// Every author that currently has at least one post within whatever scope
+// the caller hands in -- mirrors TagCloud.astro's own approach and reasoning
+// almost exactly. authorSlug is world-scoped but deliberately NOT
+// disambiguated across journals within a world (unlike journalSlug) -- several
+// journals sharing the same displayed author name are meant to merge onto one
+// author archive page, see assignSlugs() in the Foundry module's render.js
+// or this repo's scripts/ingest.js. So the dedup key here is world+authorSlug,
+// same as that archive page's own getStaticPaths. Takes posts as a prop,
+// same reasoning as TagCloud/RecentPosts: the caller decides the scope.
+interface AuthorEntry {
+  name: string;
+  world: string;
+  authorSlug: string;
+  count: number;
+}
+
+interface Props {
+  posts: CollectionEntry<"posts">[];
+}
+const { posts } = Astro.props;
+
+const authors = new Map<string, AuthorEntry>();
+for (const post of posts) {
+  const key = `${post.data.world}/${post.data.authorSlug}`;
+  if (!authors.has(key)) {
+    authors.set(key, {
+      name: post.data.author.name,
+      world: post.data.world,
+      authorSlug: post.data.authorSlug,
+      count: 0,
+    });
+  }
+  authors.get(key)!.count += 1;
+}
+
+const sortedAuthors = Array.from(authors.values()).sort((a, b) => a.name.localeCompare(b.name));
+---
+
+{ sortedAuthors.length > 0 && (
+  <section class="panel author-cloud-panel">
+    <h2 class="panel-title">Authors</h2>
+    <div class="author-container">
+      {sortedAuthors.map((author) => (
+        <a href={authorRoute(author)} class="author-item">
+          <span class="author-name">{author.name}</span>
+          <span class="author-count">({author.count})</span>
+        </a>
+      ))}
+    </div>
+  </section>
+) }
+
+<style>
+  /* --- Structural Layout Only --- */
+  .panel {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .author-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem 0.75rem; /* Tight margins mimic classic glossary indexes */
+    margin: 0;
+    padding: 0;
+  }
+
+  .author-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    text-decoration: none;
+    font-size: 0.95rem;
+    line-height: 1.3;
+    padding: 0.15rem 0.4rem;
+    white-space: nowrap;
+
+    /* Variable links map directly back to your design system theme tokens */
+    color: var(--color-text-main);
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  /* Specific typography styling for the text and numerical value count */
+  .author-name {
+    font-family: var(--color-font-body);
+    font-weight: 600;
+  }
+
+  .author-count {
+    font-family: var(--color-font-body);
+    color: var(--color-text-muted);
+    font-size: 0.85em;
+  }
+
+  /* --- Interactive Default Theme States --- */
+  .author-item:hover {
+    color: var(--color-accent);
+    background-color: var(--color-card-bg);
+    border-color: var(--color-border);
+  }
+</style>

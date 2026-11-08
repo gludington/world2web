@@ -1,0 +1,35 @@
+---
+import Breadcrumbs from "../../components/Breadcrumbs.astro";
+import Layout from "../../layouts/Layout.astro";
+import { getSiteConfig } from "../../lib/config";
+import { getPublishedPosts } from "../../lib/posts";
+import { worldIndexRoute, worldLabel } from "../../lib/routes";
+
+// A stable "back to all worlds" route, independent of what the homepage
+// itself shows -- see pages/index.astro, which renders this same list
+// in-place instead of linking here whenever there's more than one world.
+const siteName = getSiteConfig().siteName;
+const posts = await getPublishedPosts();
+const worlds = [...new Set(posts.map((post) => post.data.world))].sort();
+---
+
+<Layout title={`Worlds · ${siteName}`}>
+  <Breadcrumbs 
+    siteName={siteName} 
+    crumbs={[]} 
+    currentLabel={''}/>
+  <h1>Worlds</h1>
+  {
+    worlds.length === 0 ? (
+      <p class="empty-state">No posts yet.</p>
+    ) : (
+      <ul class="entry-list">
+        {worlds.map((world) => (
+          <li class="entry">
+            <a class="entry-title" href={worldIndexRoute(world)}>{worldLabel(world)}</a>
+          </li>
+        ))}
+      </ul>
+    )
+  }
+</Layout>

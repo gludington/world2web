@@ -1,0 +1,59 @@
+---
+// src/components/Breadcrumbs.astro
+export interface Crumb {
+  label: string;
+  href: string;
+}
+
+interface Props {
+  siteName: string;
+  crumbs?: Crumb[];
+  currentLabel?: string; // Optional final unlinked plain-text title
+}
+
+const { siteName, crumbs = [], currentLabel } = Astro.props;
+---
+
+<nav class="crumbs">
+  <a href="/">{siteName}</a>
+  {crumbs.map((c) => (
+    <>
+      <span class="separator">/</span>
+      <a href={c.href}>{c.label}</a>
+    </>
+  ))}
+  
+  {currentLabel && (
+    <>
+      <span class="separator">/</span>
+      <span class="current">{currentLabel}</span>
+    </>
+  )}
+</nav>
+
+<style>
+  /* --- Structural Layout Only --- */
+  .crumbs {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.5rem; /* Tight, readable spacing */
+    margin-bottom: 3rem;
+  }
+
+  .crumbs a, .crumbs .current {
+    text-decoration: none;
+    line-height: 1.2;
+  }
+
+  .crumbs .current {
+    color: var(--color-text-main);
+    font-weight: 500;
+  }
+
+  .separator {
+    color: var(--color-text-muted);
+    opacity: 0.7;
+    user-select: none;
+  }
+</style>

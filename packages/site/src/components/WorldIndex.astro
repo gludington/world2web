@@ -1,0 +1,141 @@
+---
+import { getPublishedPosts } from "../lib/posts";
+import { toJournalInfos, buildSectionTree, topLevelSections, sortPostsForJournal } from "../lib/sections";
+import ContentPanel from "./ContentPanel.astro";
+import TagCloud from "./TagCloud.astro";
+import AuthorCloud from "./AuthorCloud.astro";
+import { postRoute, sectionRoute, journalRoute, authorRoute, formatDate } from "../lib/routes"; // Added formatDate
+
+interface Props {
+  world: string;
+}
+
+const { world } = Astro.props;
+
+// Sorted newest-first up front -- "Recent Posts" below depends on it, and
+// nothing else here cares about order (toJournalInfos groups by journalUuid;
+// AuthorCloud/TagCloud only aggregate counts), so one sort covers every
+// consumer rather than sorting again just for the slice(0, 5).
+const allPosts = (await getPublishedPosts())
+  .filter((post) => post.data.world === world)
+  .sort((a, b) => b.data.publishedAt - a.data.publishedAt);
+const journalInfos = toJournalInfos(allPosts);
+const rootLevelJournals = journalInfos.filter((b) => !b.root);
+const rootLevelSections = topLevelSections(buildSectionTree(journalInfos));
+
+// 1. Map Recent Posts into ContentPanel Item structure (incorporating journal titles and proper formatting)
+const recentPostsItems = allPosts.slice(0, 5).map((post) => ({
+  title: post.data.title,
+  href: postRoute(post.data),
+  authorName: post.data.author?.name,
+  authorHref: authorRoute(post.data),
+  subLabels: [post.data.journalTitle],
+  dateLabel: formatDate ? formatDate(post.data.publishedAt) : post.data.publishedAt,
+  frontImage: post.data.frontImage
+}));
+
+// Featured ("homepage") journal: one journal per world can be shown above
+// Recent Posts, or instead of it, in its own post order -- set in the
+// journal's Publishing Settings in Foundry. Scoped to this world only, since
+// allPosts is already filtered to it: on a multi-world site each world's
+// index gets its own featured journal and the site-wide world picker is
+// untouched. The Foundry module keeps this to one journal per world; if
+// stale content ever leaves two, the most recently updated one wins, so the
+// choice is deterministic.
+const FEATURED_LIMIT = 10;
+const featuredCandidate = allPosts
+  .filter((post) => post.data.homepage !== "none")
+  .reduce<(typeof allPosts)[number] | null>(
+    (best, post) => (!best || post.data.updatedAt > best.data.updatedAt ? post : best),
+    null,
+  );
+const featuredJournal = featuredCandidate
+  ? journalInfos.find((journal) => journal.journalUuid === featuredCandidate.data.journalUuid)
+  : undefined;
+const featuredMode = featuredCandidate?.data.homepage ?? "none";
+const featuredPosts = featuredJournal
+  ? sortPostsForJournal(
+      allPosts.filter((post) => post.data.journalUuid === featuredJournal.journalUuid),
+      featuredJournal.postOrder,
+    )
+  : [];
+const featuredItems = [
+  ...featuredPosts.slice(0, FEATURED_LIMIT).map((post) => ({
+    title: post.data.title,
+    href: postRoute(post.data),
+    authorName: post.data.author?.name,
+    authorHref: authorRoute(post.data),
+    frontImage: post.data.frontImage,
+  })),
+  // A long featured journal (say, a whole campaign's session notes) would
+  // otherwise push everything else far down the page.
+  ...(featuredJournal && featuredPosts.length > FEATURED_LIMIT
+    ? [{ title: `All ${featuredPosts.length} posts in ${featuredJournal.journalTitle} →`, href: journalRoute(featuredJournal) }]
+    : []),
+];
+const showRecentPosts = featuredMode !== "replace";
+
+// 2. Map Sections and Journals into a single unified Browse panel array --
+// no separate Search entry here anymore: the persistent header search box
+// (Layout.astro) already covers that on every page, including this one.
+const browseItems = [
+  ...rootLevelSections.map((s) => ({
+    title: s.label,
+    href: sectionRoute(s.world, s.slug),
+    metaType: 'section' as const
+  })),
+  ...rootLevelJournals.map((journal) => ({
+    title: journal.journalTitle,
+    href: journalRoute(journal)
+    // No author here -- see JournalInfo's own doc comment (lib/sections.ts):
+    // a journal's posts can each have their own author now, so there's no
+    // single reliable one to show for the journal itself.
+  }))
+];
+---
+
+{ allPosts.length === 0 ? (
+  <p class="empty-state">
+    No posts yet. Run <code>node scripts/ingest.js &lt;payload.json&gt;</code> from the repo root, then restart the dev server.
+  </p>
+) : (
+  <div class="world-dashboard">
+    {/* Left Column: Primary Content Feed */}
+    <div class="main-column">
+      {featuredJournal && <ContentPanel title={featuredJournal.journalTitle} items={featuredItems} />}
+      {showRecentPosts && <ContentPanel title="Recent Posts" items={recentPostsItems} />}
+    </div>
+    
+    {/* Right Column: Navigation & Indices */}
+    <div class="sidebar-column">
+      <ContentPanel title="Browse" items={browseItems} />
+      <AuthorCloud posts={allPosts} />
+      <TagCloud posts={allPosts} />
+    </div>
+  </div>
+) }
+
+<style>
+  /* --- Structural Dashboard Grid Layout --- */
+  .world-dashboard {
+    display: flex;
+    flex-direction: column;
+    gap: 3rem;
+    margin-top: 2rem;
+  }
+
+  /* Responsive desktop split matching traditional rulebook sidebars */
+  @media (min-width: 900px) {
+    .world-dashboard {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr; /* Roomy left main container, compact right rail */
+      gap: 4.5rem;
+    }
+  }
+
+  .sidebar-column {
+    display: flex;
+    flex-direction: column;
+    gap: 3.5rem; /* Separates the Browse section from the TagCloud stack */
+  }
+</style>

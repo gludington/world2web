@@ -1,0 +1,45 @@
+---
+// src/components/Pagination.astro
+interface Props {
+  prevUrl: string | null;
+  nextUrl: string | null;
+  pageNum: number;
+  totalPages: number;
+}
+
+const { prevUrl, nextUrl, pageNum, totalPages } = Astro.props;
+---
+
+<nav class="pagination">
+  {prevUrl ? (
+    <a href={prevUrl} class="nav-link prev">&larr; Newer</a>
+  ) : (
+    <span class="disabled prev">&larr; Newer</span>
+  )}
+  
+  <span class="pagination-status">
+    Page {pageNum} of {totalPages}
+  </span>
+  
+  {nextUrl ? (
+    <a href={nextUrl} class="nav-link next">Older &rarr;</a>
+  ) : (
+    <span class="disabled next">Older &rarr;</span>
+  )}
+</nav>
+
+<style>
+  /* 
+    Keep the structural flex/grid containers local to the layout element! 
+    The visual tokens (borders, fonts, colors) stay inherited from base.css.
+  */
+  .pagination {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: center;
+    width: 100%;
+  }
+
+  .prev { justify-self: start; }
+  .next { justify-self: end; }
+</style>

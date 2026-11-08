@@ -1,0 +1,73 @@
+---
+// src/components/ThemeSelector.astro
+---
+
+<div class="theme-selector-container">
+  <label for="theme-select" class="theme-label">Theme:</label>
+  <select id="theme-select" class="theme-dropdown">
+    <option value="dnd">D&D Parchment</option>
+    <option value="ravenloft">D&D Ravenloft</option>
+    <option value="scifi">Sci-Fi Terminal</option>
+  </select>
+</div>
+
+<style>
+  .theme-selector-container {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-family: var(--color-font-heading);
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .theme-label {
+    color: var(--color-text-muted);
+    font-weight: 600;
+  }
+
+  .theme-dropdown {
+    background-color: var(--color-card-bg);
+    color: var(--color-text-main);
+    border: 1px solid var(--color-border);
+    padding: 0.3rem 0.6rem;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: var(--card-radius, 0px);
+    outline: none;
+  }
+
+  .theme-dropdown:focus {
+    border-color: var(--color-accent);
+  }
+</style>
+
+<script>
+
+  function setupThemeSelector() {
+    const select = document.getElementById('theme-select') as HTMLSelectElement | null;
+    
+    if (select) {
+      // Sync dropdown display element to match what's active in the DOM root
+      const currentTheme = document.documentElement.getAttribute('data-theme') || 'dnd';
+      select.value = currentTheme;
+
+      // Event listener to switch themes dynamically and save the setting
+      select.addEventListener('change', (e) => {
+        const target = e.target as HTMLSelectElement;
+        const choice = target.value;
+        
+        document.documentElement.setAttribute('data-theme', choice);
+        localStorage.setItem('site-theme', choice); // Saves choice locally across links
+      });
+    }
+  }
+
+  // Runs on baseline application rendering load
+  setupThemeSelector();
+
+  // Special listener for Astro's ClientRouter navigation (if used in template configurations)
+  document.addEventListener('astro:page-load', setupThemeSelector);
+</script>

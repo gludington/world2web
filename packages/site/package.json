@@ -1,0 +1,38 @@
+{
+  "name": "@world2web/site",
+  "version": "0.21.0",
+  "description": "The World2Web campaign site, as an Astro integration. Renders journals published from Foundry VTT by the World2Web module.",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "astro-integration",
+    "astro-component",
+    "foundry-vtt",
+    "world2web"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gludington/world2web.git",
+    "directory": "packages/site"
+  },
+  "exports": {
+    ".": "./index.mjs",
+    "./content-config": "./src/content.config.ts"
+  },
+  "bin": {
+    "world2web-ingest": "scripts/ingest.js"
+  },
+  "files": [
+    "LICENSE",
+    "index.mjs",
+    "src",
+    "scripts"
+  ],
+  "peerDependencies": {
+    "astro": "7.2.4"
+  },
+  "dependencies": {
+    "pagefind": "1.6.0"
+  },
+  "homepage": "https://world2web.loodingdongs.com"
+}
