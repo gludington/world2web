@@ -23,9 +23,12 @@ export const SITE_ASTRO_VERSION = "7.2.4";
 /**
  * Works out whether a site repo's package.json needs its versions updated.
  *
- * Only a package.json that already depends on `@world2web/site` is managed. Anything else -- a
- * site created before the package existed, or one whose owner took the site's code into their own
- * repo -- is left alone (`"unmanaged"`).
+ * Only a package.json that depends on `@world2web/site` by a plain version number (`1.2.3`, or a
+ * prerelease like `1.2.3-beta.1`) is managed. Anything else is left alone (`"unmanaged"`): a site
+ * created before the package existed, one whose owner took the site's code into their own repo,
+ * or one deliberately pointed at something else by hand -- a preview build's URL while testing an
+ * unreleased change, a `file:`/`link:` path, a git URL. Overwriting those on the next Publish to
+ * Web would silently undo a deliberate choice.
  *
  * @param {string|null} packageJsonText The repo's current package.json, or `null` if it has none.
  * @param {{siteVersion: string, astroVersion?: string}} target
@@ -33,6 +36,9 @@ export const SITE_ASTRO_VERSION = "7.2.4";
  *   `"updated"` carries the new file content (2-space JSON, trailing newline). Every other field
  *   in the file is kept as-is.
  */
+/** An exact semver version, optionally with a prerelease/build suffix -- no ranges, tags or URLs. */
+const PLAIN_VERSION_RE = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
+
 export function planSitePin(packageJsonText, { siteVersion, astroVersion = SITE_ASTRO_VERSION }) {
   if (packageJsonText == null) return { status: "unmanaged" };
   let pkg;
@@ -41,7 +47,9 @@ export function planSitePin(packageJsonText, { siteVersion, astroVersion = SITE_
   } catch {
     return { status: "invalid" };
   }
-  if (!pkg || typeof pkg !== "object" || !pkg.dependencies?.[SITE_PACKAGE]) return { status: "unmanaged" };
+  if (!pkg || typeof pkg !== "object") return { status: "unmanaged" };
+  const current = pkg.dependencies?.[SITE_PACKAGE];
+  if (typeof current !== "string" || !PLAIN_VERSION_RE.test(current)) return { status: "unmanaged" };
 
   const deps = pkg.dependencies;
   if (deps[SITE_PACKAGE] === siteVersion && deps.astro === astroVersion) return { status: "current" };

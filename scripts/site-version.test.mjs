@@ -55,3 +55,21 @@ test("isSiteVersionPublished: true only for a 200 from the registry; never throw
     false,
   );
 });
+
+test("planSitePin: a dependency set by hand to a URL, path, range or tag is left alone", () => {
+  for (const spec of [
+    "https://pkg.pr.new/gludington/world2web/@world2web/site@abc1234",
+    "file:../world2web/packages/site",
+    "link:../site",
+    "workspace:*",
+    "github:gludington/world2web",
+    "^1.0.0",
+    "latest",
+  ]) {
+    assert.deepEqual(planSitePin(thin(spec), { siteVersion: "1.0.0" }), { status: "unmanaged" }, spec);
+  }
+});
+
+test("planSitePin: a prerelease version is still a plain version, so it's managed", () => {
+  assert.equal(planSitePin(thin("1.0.0-beta.1"), { siteVersion: "1.0.0" }).status, "updated");
+});
