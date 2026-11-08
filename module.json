@@ -18,6 +18,7 @@
       "ownership": { "PLAYER": "OBSERVER", "ASSISTANT": "OWNER" }
     }
   ],
+  "license": "LICENSE",
   "authors": [{ "name": "gludington" }],
   "url": "https://github.com/gludington/world2web",
   "manifest": "https://github.com/gludington/world2web/releases/latest/download/module.json",
