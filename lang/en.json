@@ -36,7 +36,7 @@
       },
       "SiteTheme": {
         "Name": "Site Theme",
-        "Hint": "A theme name (e.g. 'midnight') matching one built into the site template's own styles/tokens.css, or blank/'default' for the site's built-in look."
+        "Hint": "One of the site's built-in themes -- 'dnd', 'ravenloft' or 'scifi' -- or blank/'default' for the standard look."
       },
       "AllowThemeOverride": {
         "Name": "Allow Visitor Theme Override",
@@ -45,6 +45,11 @@
       "SiteName": {
         "Name": "Site Name",
         "Hint": "Replaces \"World2Web\" as the site's name/branding (page title, homepage heading, breadcrumbs)."
+      },
+      "HomepageLinks": {
+        "Name": "Homepage Links",
+        "Label": "Edit Links",
+        "Hint": "Links shown in a footer on this world's home page -- for example an install link or a Discord invite. On a site several worlds publish to, the main homepage shows every world's links combined. Take effect on the next Publish to Web."
       },
       "JournalsSegment": {
         "Name": "Journals URL Segment",
@@ -67,7 +72,8 @@
       "NoCurrentPage": "couldn't determine which page to publish -- see console.",
       "PostSettingsSaved": "post settings saved for \"{name}\".",
       "DeploySiteSaved": "connected to GitHub and saved. Mark a journal as published, publish a page, then click Publish to Web.",
-      "SiteUpdated": "your site is being updated to World2Web site version {version}."
+      "SiteUpdated": "your site is being updated to World2Web site version {version}.",
+      "HomepageLinksSaved": "saved {count} homepage link(s). They'll appear on your site after the next Publish to Web."
     },
     "Button": {
       "DevSync": "Dev Sync",
@@ -100,7 +106,7 @@
       "AuthorImageLabel": "Author image override",
       "AuthorImageHint": "Ignored if Author Actor override above is set. Path or URL. Defaults to that same owner's character portrait, if they have one.",
       "RootLabel": "Root path override",
-      "RootHint": "A \"/\"-separated list of folder names, e.g. \"Campaign/Arc 1\" -- placed between /journals/&lt;world&gt;/ and this journal's own address on the site, and each folder in the list becomes its own browsable page there too. Defaults to this journal's own folder hierarchy in Foundry.",
+      "RootHint": "A \"/\"-separated list of folder names, e.g. \"Campaign/Arc 1\" -- placed between /&lt;world&gt;/journals/ and this journal's own address on the site, and each folder in the list becomes its own browsable page there too. Defaults to this journal's own folder hierarchy in Foundry.",
       "TagsLabel": "Tags (comma-separated)",
       "PostOrderLabel": "Post order",
       "PostOrderNewest": "Newest first",
@@ -127,7 +133,7 @@
       "DeployStep1Of3": "Step 1 of 3: Name your site and choose a host",
       "DeployStep2Of3": "Step 2 of 3: Create a GitHub token",
       "DeployStep3Of3": "Step 3 of 3: Save your details",
-      "DeploySiteIntro": "Pick a host below to open its own one-click deploy page in a new tab. Each generates a new repo from the World2Web site template under your own GitHub account and hosts it there -- both in one flow, on that host's own site, with its own deploy authentication handled behind the scenes (the separate Cloudflare API token this module's README mentions is for its fully-manual setup path -- it doesn't come up in this one-click flow).",
+      "DeploySiteIntro": "Pick a host below. Its own setup page opens in a new tab and creates your site: a copy of the World2Web site template in your GitHub account, built and published by that host. You don't need any other accounts or tokens for this step.",
       "DeploySiteFirstBuildNote": "Your host will build a placeholder \"your site is ready\" page first. Note the site address it gives you (e.g. something.netlify.app) -- that's the URL to share with your players once you publish.",
       "DeploySiteRepoNameLabel": "Repo name",
       "DeploySiteRepoNameHint": "Netlify and Cloudflare will suggest the name \"world2web-site-template\" -- change it to exactly this name. Vercel picks it up automatically.",
@@ -148,7 +154,13 @@
         "branch-not-found": "<strong>{owner}/{repo}</strong> has no branch named \"{branch}\". If your host just created the repo, wait a minute and try again; otherwise change the GitHub Branch setting.",
         "network": "Couldn't reach GitHub. Check your connection, or use Save Anyway to skip this check.",
         "unexpected": "GitHub returned an unexpected response ({status}). Try again, or use Save Anyway to skip this check."
-      }
+      },
+      "HomepageLinksTitle": "Homepage Links",
+      "HomepageLinksIntro": "Shown in a footer on this world's home page, in this order. If other worlds publish to the same site, the main homepage combines all their links. Each link needs a full address starting with https://.",
+      "HomepageLinksNamePlaceholder": "Name, e.g. Discord",
+      "HomepageLinksAdd": "Add link",
+      "HomepageLinksRemove": "Remove this link",
+      "HomepageLinksInvalid": "These need a full web address starting with https:// (or http://): {names}. Fix or remove them, then save again."
     }
   }
 }

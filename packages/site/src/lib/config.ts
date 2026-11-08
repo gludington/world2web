@@ -38,11 +38,32 @@ function slugifySegment(value: string, fallback: string): string {
   return slug || fallback;
 }
 
+export interface HomepageLink {
+  label: string;
+  href: string;
+}
+
 export interface SiteConfig {
   theme: string;
   siteName: string;
   journalsSegment: string;
   allowThemeOverride: boolean;
+}
+
+/** Keeps only well-formed http(s) links. The module already validates these before publishing;
+ * this guards against a hand-edited world-config.json. */
+function readHomepageLinks(value: unknown): HomepageLink[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item.label !== "string" || typeof item.href !== "string") return [];
+    try {
+      const url = new URL(item.href);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return [];
+      return [{ label: item.label.trim() || url.href, href: url.href }];
+    } catch {
+      return [];
+    }
+  });
 }
 
 const DEFAULT_SITE_CONFIG: SiteConfig = {
@@ -87,4 +108,34 @@ export function getSiteConfig(): SiteConfig {
  * `<html data-theme="...">` in Layout.astro, or null for "default"/unset. */
 export function resolveDataTheme(theme: string): string | null {
   return theme && theme !== "default" ? theme : null;
+}
+
+/** One world's Homepage Links, from content/worlds/<world>/world-config.json -- written by that
+ * world's own Publish to Web, so each world on a shared site keeps its own. [] if the world has
+ * none, or the file is missing or unreadable. */
+export function getWorldHomepageLinks(world: string): HomepageLink[] {
+  const file = path.join(__WORLD2WEB_CONTENT_DIR__, "worlds", world, "world-config.json");
+  if (!existsSync(file)) return [];
+  try {
+    return readHomepageLinks(JSON.parse(readFileSync(file, "utf-8")).homepageLinks);
+  } catch {
+    return [];
+  }
+}
+
+/** The Homepage Links to show for a set of worlds: one world's own links on its home page, or
+ * every world's combined on a multi-world site's main homepage. Combined links are
+ * de-duplicated by address -- the first world (alphabetically) to list an address supplies its
+ * name -- and keep world order, then each world's own order. */
+export function getHomepageLinks(worlds: string[]): HomepageLink[] {
+  const seen = new Set<string>();
+  const links: HomepageLink[] = [];
+  for (const world of [...worlds].sort()) {
+    for (const link of getWorldHomepageLinks(world)) {
+      if (seen.has(link.href)) continue;
+      seen.add(link.href);
+      links.push(link);
+    }
+  }
+  return links;
 }

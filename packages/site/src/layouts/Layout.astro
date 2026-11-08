@@ -82,6 +82,10 @@ const isSearchPage = Astro.url.pathname === searchRoute();
         </div>
       </div>
       <slot />
+      {/* Optional page footer -- only the home pages fill it, with the
+          module's Homepage Links (components/HomepageLinks.astro). Inside
+          <main> so it shares the content column's width and margins. */}
+      <slot name="footer" />
     </main>
   </body>
 </html>

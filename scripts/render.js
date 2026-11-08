@@ -216,3 +216,26 @@ export function buildSiteConfigFile({ theme, siteName, journalsSegment, allowThe
     )}\n`,
   };
 }
+
+/**
+ * Builds `content/worlds/<world>/world-config.json` -- this world's own site settings (see
+ * collector.js's collectWorldConfig), in the world's own folder so that worlds sharing a site
+ * can't overwrite each other's. Read by the site package's `lib/config.ts`.
+ *
+ * @param {string} worldSlug As returned by {@link renderPayloadToFiles}.
+ * @param {{homepageLinks?: {label: string, href: string}[]}} [worldConfig]
+ * @returns {{path: string, content: string}} Never `null`/`undefined`.
+ */
+export function buildWorldConfigFile(worldSlug, worldConfig = {}) {
+  return {
+    path: `content/worlds/${worldSlug}/world-config.json`,
+    content: `${JSON.stringify(
+      {
+        // Already validated by collector.js's normalizeHomepageLinks().
+        homepageLinks: Array.isArray(worldConfig.homepageLinks) ? worldConfig.homepageLinks : [],
+      },
+      null,
+      2,
+    )}\n`,
+  };
+}

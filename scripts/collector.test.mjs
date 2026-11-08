@@ -108,6 +108,7 @@ test("collectJournalData includes site config (theme/siteName/journalsSegment/al
         siteName: "The Ashwood Chronicle",
         journalsSegment: "chronicles",
         allowThemeOverride: true,
+        homepageLinks: [{ label: "Install", href: "https://example.com/module.json" }, { label: "Bad", href: "nope" }],
       },
     },
     async () => {
@@ -117,6 +118,11 @@ test("collectJournalData includes site config (theme/siteName/journalsSegment/al
         siteName: "The Ashwood Chronicle",
         journalsSegment: "chronicles",
         allowThemeOverride: true,
+      });
+      // Homepage Links are per world, not site-wide: they travel separately,
+      // already reduced to valid links.
+      assert.deepEqual(payload.worldConfig, {
+        homepageLinks: [{ label: "Install", href: "https://example.com/module.json" }],
       });
     },
   );
@@ -133,6 +139,7 @@ test("site config defaults to 'default' theme, 'World2Web' name, 'journals' segm
       journalsSegment: "journals",
       allowThemeOverride: false,
     });
+    assert.deepEqual(payload.worldConfig, { homepageLinks: [] });
   });
 });
 
@@ -1121,11 +1128,13 @@ test("resolveRelativeUuids: a sibling-page link (.pageId) becomes an absolute pa
   );
 });
 
-test("resolveRelativeUuids: an even-part relative link resolves against the root journal", async () => {
+test("resolveRelativeUuids: an even-part relative link resolves against the page itself, as Foundry does", async () => {
   const { resolveRelativeUuids } = await import("./collector.js");
+  // Foundry reads this as something embedded in page p1 (so it's a broken
+  // link there); the site has to agree rather than turn it into a link to p2.
   assert.equal(
     resolveRelativeUuids("@UUID[.JournalEntryPage.p2]", "JournalEntry.abc.JournalEntryPage.p1"),
-    "@UUID[JournalEntry.abc.JournalEntryPage.p2]",
+    "@UUID[JournalEntry.abc.JournalEntryPage.p1.JournalEntryPage.p2]",
   );
 });
 
@@ -1185,4 +1194,34 @@ test("journal homepage mode: defaults to 'none', passes 'above'/'replace' throug
     const byTitle = Object.fromEntries(payload.journals.map((j) => [j.title, j.homepage]));
     assert.deepEqual(byTitle, { A: "none", B: "above", C: "replace", D: "none" });
   });
+});
+
+test("checkHomepageLink: accepts http(s) links, trims spaces, and uses the address when there's no name", async () => {
+  const { checkHomepageLink } = await import("./collector.js");
+  assert.deepEqual(checkHomepageLink({ label: "  Discord ", href: " https://discord.gg/abc " }), {
+    ok: true,
+    link: { label: "Discord", href: "https://discord.gg/abc" },
+  });
+  assert.deepEqual(checkHomepageLink({ label: "", href: "https://example.com" }), {
+    ok: true,
+    link: { label: "https://example.com/", href: "https://example.com/" },
+  });
+});
+
+test("checkHomepageLink: empty rows are skipped, anything but an http(s) address is invalid", async () => {
+  const { checkHomepageLink } = await import("./collector.js");
+  assert.deepEqual(checkHomepageLink({ label: " ", href: "" }), { ok: false, reason: "empty" });
+  for (const href of ["example.com", "javascript:alert(1)", "file:///etc/passwd", ""]) {
+    assert.deepEqual(checkHomepageLink({ label: "X", href }), { ok: false, reason: "invalid" }, href);
+  }
+});
+
+test("normalizeHomepageLinks: keeps only valid links, at most 10, and never throws", async () => {
+  const { normalizeHomepageLinks } = await import("./collector.js");
+  assert.deepEqual(normalizeHomepageLinks([{ label: "A", href: "https://a.example" }, { label: "B", href: "bad" }]), [
+    { label: "A", href: "https://a.example/" },
+  ]);
+  const many = Array.from({ length: 15 }, (_, i) => ({ label: `L${i}`, href: `https://example.com/${i}` }));
+  assert.equal(normalizeHomepageLinks(many).length, 10);
+  for (const junk of [null, undefined, "https://example.com", {}, 7]) assert.deepEqual(normalizeHomepageLinks(junk), []);
 });

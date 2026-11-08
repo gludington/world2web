@@ -74,6 +74,14 @@ pnpm --filter world2web-starter ingest ~/Downloads/world2web-....json
 That writes into `packages/starter/content/`, which is gitignored. `pnpm site:build` does a full
 production build, including the search index.
 
+#### When changes don't show up
+
+- **Restart `pnpm site:dev` after changing a component's `<style>`.** The dev server picks up
+  markup changes in `packages/site`, but keeps serving the old styles until restarted, so a page
+  can show new markup with stale CSS.
+- **Reload Foundry (F5) after changing module code, before Dev Sync.** Foundry loads the module's
+  scripts once per page load; a Dev Sync without a reload produces the old payload format.
+
 #### Search while developing
 
 Pagefind builds the search index from the finished HTML of a full build, so plain `pnpm site:dev`
