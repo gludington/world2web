@@ -26,7 +26,7 @@
  * A journal's root defaults to its folder path ("Arc 1/Session Notes"), overridable with any
  * string. It's a URL path prefix, not just a label -- render.js/ingest.js slugify it and prepend
  * it to the journal's slug, so a root of "Arc 1/Session Notes" puts a journal at
- * `/journals/<world>/arc-1/session-notes/<slug>/` instead of `/journals/<world>/<slug>/`. Tags are
+ * `/<world>/journals/arc-1/session-notes/<slug>/` instead of `/<world>/journals/<slug>/`. Tags are
  * a freeform list. `postOrder` controls only this journal's own post-archive order ("manual" --
  * Foundry's own page order -- or "newest"/"oldest"); every other listing site-wide always shows
  * newest-first regardless.
