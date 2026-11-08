@@ -72,7 +72,25 @@ pnpm --filter world2web-starter ingest ~/Downloads/world2web-....json
 ```
 
 That writes into `packages/starter/content/`, which is gitignored. `pnpm site:build` does a full
-production build, including the search index (search only works in a build, not in dev).
+production build, including the search index.
+
+#### Search while developing
+
+Pagefind builds the search index from the finished HTML of a full build, so plain `pnpm site:dev`
+has no index and the search page says so. Use:
+
+```sh
+pnpm site:dev:search
+```
+
+It builds once, then starts the dev server, which serves that build's index at `/pagefind/` (the
+integration's `astro:server:setup` hook). Limitations:
+
+- Search results reflect content as of that build. Rerun it to pick up new or edited posts; every
+  other page still hot-reloads as usual.
+- Only posts and author pages are indexed. Listing pages carry `data-pagefind-ignore`, since
+  they'd only repeat the posts.
+- Astro allows one dev server per project. Stop a running `pnpm site:dev` first.
 
 ### A site change on a real host, before releasing
 
