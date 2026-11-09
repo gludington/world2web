@@ -1,3 +1,4 @@
+import { stripUnrevealedSecrets } from "./secrets.js";
 /**
  * Per-system Actor behavior, formalized as a small registry -- currently just biography
  * extraction, but shaped so a future per-system need follows the same pattern rather than growing
@@ -83,7 +84,9 @@ export function extractBiography(actor) {
   const system = SYSTEMS[game.system?.id];
   if (!system?.extractBiography) return "";
   try {
-    return String(system.extractBiography(actor) ?? "").trim();
+    // A biography can hold GM-only secret blocks too; publish only what a
+    // player would see.
+    return stripUnrevealedSecrets(String(system.extractBiography(actor) ?? "")).trim();
   } catch {
     return "";
   }

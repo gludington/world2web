@@ -4,7 +4,8 @@
 session recaps any time, even when your Foundry server is offline.
 
 - **You choose what goes public.** Nothing is published until you mark a journal as publishable
-  and publish its pages one at a time.
+  and publish its pages one at a time. Passages marked as Secret stay out of the website until you
+  reveal them, just as in Foundry.
 - **Players can post too.** Session notes appear under each player's character name and portrait.
 - **One click to update.** Write in Foundry, click **Publish to Web**, and your site updates a few
   minutes later.
