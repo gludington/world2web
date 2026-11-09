@@ -1225,3 +1225,28 @@ test("normalizeHomepageLinks: keeps only valid links, at most 10, and never thro
   assert.equal(normalizeHomepageLinks(many).length, 10);
   for (const junk of [null, undefined, "https://example.com", {}, 7]) assert.deepEqual(normalizeHomepageLinks(junk), []);
 });
+
+test("a published text page's unrevealed secret blocks never reach the payload", async () => {
+  const { collectJournalData } = await import("./collector.js");
+  const journal = fakeJournalEntry({
+    uuid: "JournalEntry.j",
+    name: "Notes",
+    config: { published: true },
+    pages: [
+      fakePage({
+        uuid: "JournalEntry.j.JournalEntryPage.p",
+        name: "Inn",
+        published: true,
+        publishedAt: 1,
+        updatedAt: 1,
+        html: '<p>The inn.</p><section class="secret" id="secret-1"><p>The innkeeper is a vampire.</p></section><section class="secret revealed" id="secret-2"><p>Revealed clue.</p></section>',
+      }),
+    ],
+  });
+  await withMockFoundry({ journalEntries: [journal], users: [] }, async () => {
+    const html = (await collectJournalData()).journals[0].posts[0].html;
+    assert.ok(!html.includes("vampire"), "unrevealed secret removed");
+    assert.ok(html.includes("Revealed clue."), "revealed secret kept");
+    assert.ok(html.includes("<p>The inn.</p>"));
+  });
+});

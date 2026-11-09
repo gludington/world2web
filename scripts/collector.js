@@ -42,6 +42,7 @@
  */
 
 import { extractBiography } from "./biography.js";
+import { stripUnrevealedSecrets } from "./secrets.js";
 
 const NS = "world2web";
 
@@ -243,7 +244,10 @@ export function resolveRelativeUuids(html, pageUuid) {
  */
 function renderPageHtml(page) {
   if (page.type === "text") {
-    return resolveRelativeUuids(resolveImageSrcsInHtml(page.text?.content ?? ""), page.uuid);
+    // Secrets first: nothing inside an unrevealed secret block (text, images,
+    // links) should be processed or published at all.
+    const visible = stripUnrevealedSecrets(page.text?.content ?? "");
+    return resolveRelativeUuids(resolveImageSrcsInHtml(visible), page.uuid);
   }
   if (page.type === "image") {
     const caption = page.image?.caption?.trim?.() || "";
