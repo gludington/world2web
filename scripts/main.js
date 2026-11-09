@@ -815,6 +815,81 @@ Hooks.once("ready", () => {
   showQueuedPublishResult();
 });
 
+// --- Connect this browser --------------------------------------------------------
+//
+// The token lives in each browser separately (players must never receive it,
+// and Foundry has nowhere server-side to hide it from them). Rather than an
+// error that sends the GM off to the settings, a browser without the token
+// gets asked for it right where it's needed -- and its password manager can
+// fill it in from then on.
+
+/**
+ * Whether this browser can publish, asking for the token first if the repository is configured
+ * but this browser hasn't been given the token yet.
+ *
+ * @returns {Promise<boolean>} `true` once publishing can go ahead.
+ */
+async function ensureBrowserConnected() {
+  if (getGithubConfig()) return true;
+  const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
+  const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
+  if (!owner || !repo) {
+    ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
+    return false;
+  }
+  return openConnectBrowserDialog(owner, repo);
+}
+
+/**
+ * Asks for the GitHub token for an already-configured repository, checks it can reach the repo,
+ * and keeps it in this browser.
+ *
+ * @param {string} owner
+ * @param {string} repo
+ * @param {string|null} [errorMessage] Shown after a failed check, with the dialog reopened.
+ * @returns {Promise<boolean>} `true` if a working token was saved.
+ */
+async function openConnectBrowserDialog(owner, repo, errorMessage = null) {
+  const content = `
+    ${errorMessage ? `<p class="notification error">${errorMessage}</p>` : ""}
+    <p>${t("Dialog.ConnectBrowserIntro", { repo: `<strong>${escapeHtml(`${owner}/${repo}`)}</strong>` })}</p>
+    ${tokenFieldHtml({ owner, repo })}
+    <p class="hint"><a href="${escapeHtml(buildGithubTokenUrl(owner))}" target="_blank" rel="noopener">${t("Dialog.ConnectBrowserNewToken")}</a></p>
+  `;
+  const token = await foundry.applications.api.DialogV2.wait({
+    window: { title: t("Dialog.ConnectBrowserTitle") },
+    position: { width: 520 },
+    content,
+    buttons: [
+      {
+        action: "save",
+        label: "WORLD2WEB.Dialog.ConnectBrowserSave",
+        icon: "fa-solid fa-plug",
+        default: true,
+        callback: (event, button) => ({ token: button.form.elements.token.value.trim() }),
+      },
+      { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
+    ],
+    rejectClose: false,
+  });
+  if (!token || typeof token === "string") return false; // cancelled or closed
+
+  const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
+  const check = await checkRepoAccess({ owner, repo, token: token.token, branch });
+  if (!check.ok) {
+    const message = t(`Dialog.RepoCheck.${check.reason}`, {
+      owner: escapeHtml(owner),
+      repo: escapeHtml(repo),
+      branch: escapeHtml(branch),
+      status: check.status ?? "",
+    });
+    return openConnectBrowserDialog(owner, repo, message);
+  }
+  await game.settings.set(MODULE_ID, "githubBrowserToken", token.token);
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BrowserConnected")}`);
+  return true;
+}
+
 // --- Publish relay -----------------------------------------------------------
 //
 // The GitHub token is stored per GM user and never reaches players' browsers,
@@ -903,9 +978,9 @@ async function processQueuedPublishes() {
     .filter((user) => !user.isGM && user.getFlag(MODULE_ID, QUEUE_FLAG))
     .sort((a, b) => a.getFlag(MODULE_ID, QUEUE_FLAG) - b.getFlag(MODULE_ID, QUEUE_FLAG));
   if (queued.length && !getGithubConfig()) {
-    // Leave them queued: a GM browser that has the token can publish them.
-    ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.QueueNeedsToken", { count: queued.length })}`, { permanent: true });
-    return;
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueueNeedsToken", { count: queued.length })}`);
+    // Declined or failed: leave them queued for a GM browser that has it.
+    if (!(await ensureBrowserConnected())) return;
   }
   for (const player of queued) {
     const messages = game.settings.get(MODULE_ID, "allowPlayerSelfPublish")
@@ -1079,8 +1154,9 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
       // actually touches.
       // Players never hold the GitHub token (it's per GM user), so their
       // publish runs in a connected GM's browser -- see "Publish relay".
-      if (game.user.isGM) await publishToGitHub();
-      else await publishViaGM();
+      if (game.user.isGM) {
+        if (await ensureBrowserConnected()) await publishToGitHub();
+      } else await publishViaGM();
     } catch (err) {
       console.error(`${MODULE_ID} | publish to web failed`, err);
       ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}`);
@@ -1395,6 +1471,28 @@ async function openDeployStep2CreateToken(owner, repoName) {
  *   retyping the other two.
  * @returns {Promise<void>}
  */
+/**
+ * The GitHub token input, shared by the GitHub Connection panel, the Setup Wizard's last step and
+ * the "Connect this browser" prompt. Marked up as a username + password pair -- the repository as
+ * the (hidden) username, the token as the password -- so browsers and password managers offer to
+ * save it and fill it in on the GM's other devices. That's what makes keeping the token in each
+ * browser (see the githubBrowserToken setting) bearable.
+ *
+ * @param {{owner?: string, repo?: string, token?: string}} values
+ * @returns {string} HTML.
+ */
+function tokenFieldHtml({ owner, repo, token }) {
+  const account = owner && repo ? `github.com/${owner}/${repo}` : "github.com";
+  return `
+    <input type="text" name="username" autocomplete="username" value="${escapeHtml(account)}"
+           style="display:none" aria-hidden="true" tabindex="-1">
+    <div class="form-group">
+      <label>${t("Settings.GithubToken.Name")}</label>
+      <input type="password" name="token" autocomplete="current-password" value="${escapeHtml(token ?? "")}">
+      <p class="hint">${t("Settings.GithubToken.Hint")}</p>
+    </div>`;
+}
+
 async function openDeployStep3SaveSettings(defaults, errorMessage = null, { standalone = false } = {}) {
   const error = errorMessage ? `<p class="notification error">${errorMessage}</p>` : "";
   const content = `
@@ -1420,11 +1518,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
     </div>`
         : ""
     }
-    <div class="form-group">
-      <label>${t("Settings.GithubToken.Name")}</label>
-      <input type="password" name="token" value="${escapeHtml(defaults.token ?? "")}">
-      <p class="hint">${t("Settings.GithubToken.Hint")}</p>
-    </div>
+    ${tokenFieldHtml(defaults)}
   `;
 
   const result = await foundry.applications.api.DialogV2.wait({

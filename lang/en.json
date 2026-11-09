@@ -37,7 +37,7 @@
       },
       "GithubToken": {
         "Name": "GitHub Personal Access Token",
-        "Hint": "Fine-grained token.  Recommended to create a token with permissions to only this one repo, Contents: Read and write permission."
+        "Hint": "Fine-grained token, with access to only this one repository and Contents: Read and write. Kept in this browser only; your browser or password manager can save it."
       },
       "SiteTheme": {
         "Name": "Site Theme",
@@ -85,8 +85,9 @@
       "RelayTimeout": "no reply from the GM's browser. The publish may still be running; check with your GM.",
       "RelayQueued": "no GM is connected right now, so your publish is queued. It'll go live as soon as a GM connects, and you'll see the result here (or next time you log in).",
       "QueuedResultIntro": "your queued publish has run:",
-      "QueueNeedsToken": "{count} player publish request(s) are waiting, but this browser has no GitHub token yet. Add it under Configure Settings → World2Web → GitHub Connection, then reload to publish them.",
-      "RelayGMNoToken": "the GM's browser doesn't have a GitHub token set up yet, so your publish couldn't run. Ask your GM to add it under GitHub Connection, then publish again."
+      "QueueNeedsToken": "{count} player publish request(s) are waiting, and this browser needs your GitHub token to publish them.",
+      "RelayGMNoToken": "the GM's browser doesn't have a GitHub token set up yet, so your publish couldn't run. Ask your GM to add it under GitHub Connection, then publish again.",
+      "BrowserConnected": "this browser is connected to GitHub."
     },
     "Button": {
       "DevSync": "Dev Sync",
@@ -174,7 +175,11 @@
       "HomepageLinksAdd": "Add link",
       "HomepageLinksRemove": "Remove this link",
       "HomepageLinksInvalid": "These need a full web address starting with https:// (or http://): {names}. Fix or remove them, then save again.",
-      "GithubConnectionTitle": "GitHub Connection"
+      "GithubConnectionTitle": "GitHub Connection",
+      "ConnectBrowserTitle": "Connect this browser to GitHub",
+      "ConnectBrowserIntro": "World2Web publishes to {repo}. Your GitHub token is kept in each browser separately, so players never receive it, and this browser doesn't have it yet. Paste it below: your browser or password manager can save it, and fill it in on your other devices.",
+      "ConnectBrowserNewToken": "Don't have it to hand? Create a new token on GitHub",
+      "ConnectBrowserSave": "Connect"
     }
   }
 }
