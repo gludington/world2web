@@ -117,26 +117,46 @@ Then in Foundry: **Setup → Manage Modules** (per world) → enable **World2Web
 
 ## Publish to Web
 
-Pushes rendered markdown files straight to a GitHub repo via its Contents API (PAT bearer auth),
-so there's no local script to run and no server of ours in the middle — see
+Commits rendered markdown files and images straight to a GitHub repo (PAT bearer auth), so
+there's no local script to run and no server of ours in the middle — see
 [`world2web-site-template`](https://github.com/gludington/world2web-site-template)'s own README
 for the full turnkey walkthrough (create a repo from that template, generate a token, connect a
-host). Settings needed:
+host). Settings needed, all in the GM-only **GitHub Connection** panel:
 
-- **GitHub Repo Owner** / **GitHub Repo Name** — e.g. `alice` / `my-campaign-site`.
-- **GitHub Branch** — whatever your host builds from (`main` by default).
-- **GitHub Personal Access Token** — a fine-grained token scoped to just that repo, `Contents:
-  Read and write` permission. Not encrypted at rest by Foundry's settings storage, which is why
-  the setup guide has you scope it to exactly one repo and one permission rather than reusing a
-  broad token.
+- **Repo owner** / **repo name** — e.g. `alice` / `my-campaign-site`.
+- **Branch** — whatever your host builds from (`main` by default).
+- **Personal access token** — a fine-grained token scoped to just that repo, `Contents: Read and
+  write` permission. It's a world setting, and Foundry sends world settings to every connected
+  client, players included (user-scoped settings and compendium contents too; all confirmed
+  live), which is why the setup guide has you scope it to exactly one repo and one permission.
 
-Safe to click repeatedly and safe with multiple publishers (GM + players all able to click
-Publish): each file is pushed independently, `putFile` (in `github.js`) skips any file whose
-content hasn't actually changed (so publishing your own new post doesn't also re-commit
-everyone else's unchanged posts), and a genuine same-file race (two people editing/publishing
-the identical post within moments of each other) is handled via GitHub's own optimistic
-concurrency — a stale-`sha` write gets rejected with `409`, and `putFile` retries once against a
-freshly re-fetched `sha` before surfacing an actual error.
+### One commit per publish
+
+`github.js`'s `commitChanges` lands a whole publish as a **single commit** through GitHub's Git
+Data API, replacing the old one-Contents-API-call-per-file approach (one commit, and one host
+build, per file; the site could be caught half-published between them):
+
+1. Read the branch's head commit and its full recursive tree (three requests, any repo size).
+2. Hash each file to be written the way git does (`gitBlobSha`: SHA-1 of `"blob <len>\0"` +
+   bytes) and compare with the tree, so unchanged files are skipped without downloading them.
+   Images are content-addressed, so they're written only if the path is missing (`ifMissing`).
+3. Upload just the changed blobs (`PUSH_CONCURRENCY` at a time), build one tree on top of the
+   current one, including deletions (`sha: null`), and create one commit.
+4. Move the branch with a non-forced ref update. If another commit landed meanwhile (`422`), redo
+   from step 1 against the new head, up to three attempts; nothing is ever overwritten.
+
+Deletions are real deletions, in the same commit: unpublished pages, pages deleted in Foundry
+(`pendingDeletions`), and paths a renamed page moved away from. Each is skipped unless the file
+there still belongs to that page (its frontmatter `foundryUuid`), and a path this commit writes is
+never deleted. Nothing changed means no commit at all. `publishedPaths` and `pendingDeletions` are
+updated only after the commit lands, so a failed publish is simply retried next time.
+
+Safe to click repeatedly and with multiple publishers (players publish through the active GM's
+browser; see "Player self-publish"): a concurrent publish just means step 4 redoes the commit.
+
+The sections below describe the earlier per-file pipeline where noted; its write path
+(`pushFiles`, `putFile`, `pushBinaryAssets`, `retractDeletedPost`, the `contentHashes` cache) is
+gone, replaced by the above.
 
 ### Player self-publish
 
@@ -181,6 +201,9 @@ doesn't see its controls once the setting's on, or a player's publish touches so
 shouldn't, check the console and `entry.isOwner`/`entry.ownership` directly first.
 
 ### Publish performance
+
+*Historical: superseded by "One commit per publish" above, which needs neither the per-file
+content-hash cache nor per-file writes.*
 
 A publish used to push every file strictly one at a time, and check whether each currently-
 published post had actually changed by fetching its existing content from GitHub -- for every
@@ -311,6 +334,9 @@ change and a click of Publish, same as everything else.
 
 Posts within a journal are sorted chronologically by `publishedAt` ascending.
 
+*Since single-commit publishing, Publish to Web removes an unpublished post's file outright;
+only Dev Sync's ingest still writes the marker described here, without the post's text.*
+
 A page that's never been published at all (no `publishedAt` on record) is excluded from `posts`
 entirely, same as always. A page that WAS published and is now unpublished is still included --
 with `unpublished: true` -- rather than dropped, because there's no way to delete an
@@ -328,6 +354,12 @@ included here (not just pushed directly by `publishToGitHub()`) so the "Dev Sync
 produce `content/site-config.json` without a live `game.settings`.
 
 ## Deleted pages/entries
+
+*Since single-commit publishing, a deleted page's file is **removed** in the publish commit
+(`planPendingDeletions` in `main.js`, then `commitChanges`), not patched into a tombstone; the
+`expectedUuid` guard described below still applies, as a check before each deletion. The
+`publishedPaths`/`pendingDeletions` bookkeeping is unchanged, except that it's saved only after
+the commit lands.*
 
 The tombstone mechanism above only works because the document is still there for
 `collectJournalData()` to visit and see a flag flip -- **deleting** a page (or a whole journal entry,

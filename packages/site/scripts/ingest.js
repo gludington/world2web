@@ -159,9 +159,23 @@ async function writeJournal(contentDir, worldSlug, journal) {
   for (const post of journal.posts) {
     await writeFile(
       path.join(dir, `${post._slug}.md`),
-      `${toFrontmatter(postFrontmatter(worldSlug, journal, post))}\n${post.html}\n`,
+      // Same as the module's render.js: an unpublished post keeps only its
+      // tracking frontmatter -- no text, biography or front image.
+      post.unpublished
+        ? `${toFrontmatter(stripUnpublishedContent(postFrontmatter(worldSlug, journal, post)))}\n`
+        : `${toFrontmatter(postFrontmatter(worldSlug, journal, post))}\n${post.html}\n`,
     );
   }
+}
+
+/** Mirrors the World2Web module's render.js stripUnpublishedContent(). */
+function stripUnpublishedContent(frontmatter) {
+  return {
+    ...frontmatter,
+    author: frontmatter.author ? { ...frontmatter.author, bio: "" } : frontmatter.author,
+    frontImage: "",
+    unpublished: true,
+  };
 }
 
 async function main() {

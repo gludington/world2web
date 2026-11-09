@@ -1250,3 +1250,23 @@ test("a published text page's unrevealed secret blocks never reach the payload",
     assert.ok(html.includes("<p>The inn.</p>"));
   });
 });
+
+test("collectJournalData({scopedToUser}) only includes entries that user owns, via Foundry's permission check", async () => {
+  const { collectJournalData } = await import("./collector.js");
+  const player = { id: "player1" };
+  const withOwner = (entry, ownerIds) => {
+    entry.testUserPermission = (user, level) => level === 3 && ownerIds.includes(user.id);
+    return entry;
+  };
+  const page = (id) =>
+    fakePage({ uuid: `JournalEntry.${id}.JournalEntryPage.p`, name: "P", published: true, publishedAt: 1, updatedAt: 1 });
+  const mine = withOwner(fakeJournalEntry({ uuid: "JournalEntry.mine", name: "Mine", config: { published: true }, pages: [page("mine")] }), ["player1"]);
+  const theirs = withOwner(fakeJournalEntry({ uuid: "JournalEntry.theirs", name: "Theirs", config: { published: true }, pages: [page("theirs")] }), ["player2"]);
+  // isOwner is the *GM's* view (true for everything); scopedToUser must ignore it.
+  mine.isOwner = true;
+  theirs.isOwner = true;
+  await withMockFoundry({ journalEntries: [mine, theirs], users: [] }, async () => {
+    const payload = await collectJournalData({ scopedToUser: player });
+    assert.deepEqual(payload.journals.map((j) => j.title), ["Mine"]);
+  });
+});

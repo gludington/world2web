@@ -511,11 +511,9 @@ function resolvePostOrder(entry) {
  * Collects one page as a post, or returns `null` if it isn't collectible.
  *
  * A never-published page (no `publishedAt`) is a plain draft and excluded. A previously-published,
- * now-unpublished page is still collected -- with `unpublished: true` -- rather than dropped,
- * since there's no way to delete an already-pushed file from GitHub (`putFile` in github.js only
- * ever creates or updates). This is a soft delete: render.js and the site-template repo's
- * `scripts/ingest.js` still write the file (a tombstone, still in git history), and the site's own
- * content queries filter out anything with that flag set.
+ * now-unpublished page is still collected -- with `unpublished: true` -- rather than dropped, so
+ * its already-published file can be dealt with: Publish to Web removes it from the repo in its
+ * commit (main.js), and Dev Sync's ingest writes a text-free marker the site skips.
  *
  * A page whose type isn't publishable (see {@link isPageTypePublishable}) is excluded the same as
  * a draft, even if `publishedAt` is somehow set -- covers a page whose type changed after
@@ -671,6 +669,9 @@ export function normalizeHomepageLinks(value) {
  *   (Foundry's own always-correct-for-this-client permission getter) -- deliberately not a userId
  *   parameter resolved against a raw ownership map, since this only ever needs "does the browser
  *   calling this own it," without reimplementing Foundry's own permission-inheritance rules.
+ * @param {User|null} [options.scopedToUser] A player's publish run by a GM's browser on that
+ *   player's behalf: restricts collection to entries `scopedToUser` owns, via Foundry's own
+ *   `testUserPermission`. Takes precedence over `scopedToCaller`.
  * @returns {{generatedAt: string, world: {id: string, title: string}, foundryVersion: string,
  *   collectorVersion: string|null, siteConfig: object, worldConfig: object, journalCount: number,
  *   journals: Journal[]}}
@@ -678,9 +679,17 @@ export function normalizeHomepageLinks(value) {
  *   (nothing published at all, or -- when scoped -- the calling user owns nothing published).
  *   `collectorVersion` is `null` only if this module's own version can't be looked up.
  */
-export function collectJournalData({ scopedToCaller = false } = {}) {
+export function collectJournalData({ scopedToCaller = false, scopedToUser = null } = {}) {
   let entries = game.journal.contents.filter(isPublishable);
-  if (scopedToCaller) entries = entries.filter((entry) => entry.isOwner);
+  // scopedToUser: a player's publish, run in a GM's browser on their behalf
+  // (main.js's publish relay) -- only what *that player* owns, asked through
+  // Foundry's own permission check for that user.
+  if (scopedToUser) {
+    const OWNER = CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER;
+    entries = entries.filter((entry) => entry.testUserPermission(scopedToUser, OWNER));
+  } else if (scopedToCaller) {
+    entries = entries.filter((entry) => entry.isOwner);
+  }
   const journals = entries.map(collectJournal);
 
   return {

@@ -204,17 +204,15 @@ const ASSET_FETCH_CONCURRENCY = 6;
 /**
  * Fetches/decodes and content-addresses every asset URL referenced in the payload, up to
  * {@link ASSET_FETCH_CONCURRENCY} at a time. A failed fetch is logged and simply omitted -- one
- * bad image doesn't fail the whole publish. Deliberately not cached across publishes the way
- * `pushFiles`' text-content hashes are (see github.js) -- an image is fetched from an
- * independently-mutable external source (Foundry's own server, or an external CDN), not generated
- * by this pipeline's own code, so there's no way to know its current bytes without actually
- * fetching them; trusting a cached hash here risks missing a real content change silently.
+ * bad image doesn't fail the whole publish. Not cached across publishes: an image comes from an
+ * independently-mutable external source (Foundry's own server, or an external CDN), so there's no
+ * way to know its current bytes without fetching them.
  *
  * @param {object} payload A payload from `collectJournalData()` (see collector.js).
  * @returns {Promise<{urlMap: Map<string, string>, files: {path: string, buffer: ArrayBuffer}[]}>}
  *   `urlMap` (original URL -> local `/assets/<hash>.<ext>` path) is for
- *   {@link rewriteAssetReferences}; `files` is ready to push (see github.js's
- *   `putBinaryAssetIfMissing`). Both are empty if the payload has no images, or if every fetch
+ *   {@link rewriteAssetReferences}; `files` is ready to commit (see github.js's
+ *   `commitChanges`, `ifMissing`). Both are empty if the payload has no images, or if every fetch
  *   failed -- never `null`/`undefined` themselves.
  */
 export async function collectAssets(payload) {

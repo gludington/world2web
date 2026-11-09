@@ -10,7 +10,7 @@ import {
   MAX_HOMEPAGE_LINKS,
 } from "./collector.js";
 import { renderPayloadToFiles, buildSiteConfigFile, buildWorldConfigFile } from "./render.js";
-import { pushFiles, pushBinaryAssets, retractDeletedPost, readRepoFile, checkRepoAccess } from "./github.js";
+import { commitChanges, readRepoFile, checkRepoAccess } from "./github.js";
 import { planSitePin, isSiteVersionPublished } from "./site-version.js";
 import { collectAssets, rewriteAssetReferences } from "./assets.js";
 import { scopedDeletionUuids } from "./ownership.js";
@@ -137,8 +137,8 @@ Hooks.once("init", () => {
   // deleteJournalEntry/deleteJournalEntryPage hooks below) -- drives both
   // the immediate amber button color (nothing else could notice a
   // deletion in time for that) and which files get retracted on the next
-  // publish. A UUID is removed once its retraction has actually
-  // succeeded, not just attempted -- see retractPendingDeletions().
+  // publish. A UUID is removed once a publish's commit has actually landed
+  // with it handled -- see planPendingDeletions() and publishToGitHub().
   game.settings.register(MODULE_ID, "pendingDeletions", {
     scope: "world",
     config: false,
@@ -146,15 +146,10 @@ Hooks.once("init", () => {
     default: {},
   });
 
-  // contentHashes: { [gitHubPath]: sha256hex(content) } -- github.js's
-  // pushFiles() own performance fix, not related to deletions. A publish
-  // used to fetch every currently-published post's existing content from
-  // GitHub just to check whether it had actually changed, every single
-  // time, for every post -- the dominant cost in a real publish taking
-  // 9+ minutes. Recording each file's hash after it's confirmed correct
-  // lets pushFiles skip that GET entirely next time when nothing about a
-  // post actually changed, which -- for a stable journal with hundreds of
-  // untouched posts -- is most of them, most publishes.
+  // contentHashes: no longer used. Publishing (github.js commitChanges)
+  // reads the repo's whole file list once and compares git's own content
+  // hashes, so it no longer needs its own cache of what it last wrote.
+  // Still registered so existing worlds' stored value stays valid.
   game.settings.register(MODULE_ID, "contentHashes", {
     scope: "world",
     config: false,
@@ -208,7 +203,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubOwner.Name",
     hint: "WORLD2WEB.Settings.GithubOwner.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "",
   });
@@ -216,7 +211,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubRepo.Name",
     hint: "WORLD2WEB.Settings.GithubRepo.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "",
   });
@@ -224,7 +219,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubBranch.Name",
     hint: "WORLD2WEB.Settings.GithubBranch.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "main",
   });
@@ -239,13 +234,40 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true,
   });
+  // The GitHub token: a world setting, edited in the GitHub Connection panel
+  // (GM only). Note that Foundry sends every world setting to every connected
+  // user, so players' browsers can read it -- which is why the setup guidance
+  // is a fine-grained token limited to the one site repository. (Neither user
+  // nor client scope fixes that well: user-scoped settings reach players too,
+  // and client scope means re-entering it in every browser.)
   game.settings.register(MODULE_ID, "githubToken", {
-    name: "WORLD2WEB.Settings.GithubToken.Name",
-    hint: "WORLD2WEB.Settings.GithubToken.Hint",
     scope: "world",
-    config: true,
+    config: false,
     type: String,
     default: "",
+  });
+  // Where unreleased builds of 0.23.0 briefly kept the token. Registered only
+  // so migrateTokenToWorld() can move a token back and clear them.
+  game.settings.register(MODULE_ID, "githubBrowserTokens", { scope: "client", config: false, type: Object, default: {} });
+  game.settings.register(MODULE_ID, "githubBrowserToken", { scope: "client", config: false, type: String, default: "" });
+  game.settings.register(MODULE_ID, "githubUserToken", { scope: "user", config: false, type: String, default: "" });
+
+  class GithubConnectionMenu extends foundry.applications.api.ApplicationV2 {
+    static DEFAULT_OPTIONS = { id: "world2web-github-connection-menu" };
+
+    async render(...args) {
+      await openGithubConnectionDialog();
+      return this;
+    }
+  }
+
+  game.settings.registerMenu(MODULE_ID, "githubConnectionMenu", {
+    name: "WORLD2WEB.Settings.GithubConnection.Name",
+    label: "WORLD2WEB.Settings.GithubConnection.Label",
+    hint: "WORLD2WEB.Settings.GithubConnection.Hint",
+    icon: "fa-brands fa-github",
+    type: GithubConnectionMenu,
+    restricted: true,
   });
 
   game.settings.register(MODULE_ID, "siteTheme", {
@@ -320,6 +342,13 @@ Hooks.once("init", () => {
  *   owner/repo/token/branch settings, or `null` if owner, repo, or token is unset/blank. `branch`
  *   falls back to `"main"` if unset.
  */
+/** Result messages shown on this screen -- {@link publishToGitHub}'s default `notify`. */
+const screenNotify = {
+  info: (text) => ui.notifications.info(text),
+  warn: (text) => ui.notifications.warn(text),
+  error: (text) => ui.notifications.error(text),
+};
+
 function getGithubConfig() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
@@ -343,65 +372,29 @@ function getGithubConfig() {
 // this file) catch that at the moment it happens and record the page's
 // UUID in the pendingDeletions setting -- the only way anything could
 // notice in time, since by the next render there's no document left to
-// scan. retractPendingDeletions() (called from publishToGitHub()) is what
-// actually retracts them, by patching each one's already-correct
-// frontmatter straight on GitHub (github.js's retractDeletedPost) rather
-// than trying to reconstruct a post from a document that's gone.
+// scan. publishToGitHub() removes their files in its commit (via
+// planPendingDeletions()), checking first that each file still belongs to
+// the deleted page.
 
 /**
- * Retracts every page currently tracked in `pendingDeletions` -- or, when `scopedToCaller` is set
- * (a player's own "Publish to Web," see "Player self-publish" below), only the ones whose captured
- * ownership snapshot shows the *current* user as an owner, so a player's publish can't retract
- * someone else's deleted content. A UUID with no recorded path (never actually got published, or
- * predates this feature existing at all) has nothing to retract and is just dropped -- there's no
- * file to touch either way. Passes `expectedUuid` through to `retractDeletedPost` so a same-run
- * race (a brand-new page published with the same resulting slug already overwrote this exact path
- * earlier in this very publish, via `pushFiles()` above) backs off instead of unpublishing that
- * live content by mistake -- see that function's own doc comment. One failure doesn't stop the
- * rest -- it's simply left in `pendingDeletions` for the next publish to retry, same "one bad item
- * doesn't fail the batch" pattern assets.js already uses for a failed image fetch.
+ * The pending deletions this publish should handle: pages deleted in Foundry since they were last
+ * published (see "Deleted pages/entries"), with the repo path each was last published at. Scoped
+ * like the rest of the publish -- a player's covers only deletions their ownership snapshot shows
+ * as theirs. A deletion with no recorded path (never published, or before paths were tracked) is
+ * dropped here, since there's nothing in the repo to remove.
  *
- * @param {import("./github.js").RepoTarget} config
- * @param {object} [options]
- * @param {boolean} [options.scopedToCaller]
- * @returns {Promise<number>} The count actually retracted, for the publish notification. `0` if
- *   nothing was pending (or, when scoped, nothing pending belonged to the caller).
+ * @param {{scopedToCaller?: boolean, userId?: string}} [options]
+ * @returns {{uuid: string, path: string}[]}
  */
-async function retractPendingDeletions(config, { scopedToCaller = false } = {}) {
+function planPendingDeletions({ scopedToCaller = false, userId = game.user.id } = {}) {
   const pending = game.settings.get(MODULE_ID, "pendingDeletions");
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
-  const pendingUuids = scopedDeletionUuids(pending, {
+  const uuids = scopedDeletionUuids(pending, {
     scopedToCaller,
-    userId: game.user.id,
+    userId,
     ownerLevel: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER,
   });
-  if (pendingUuids.length === 0) return 0;
-
-  const nextPending = { ...pending };
-  const nextPaths = { ...paths };
-  let retractedCount = 0;
-
-  for (const uuid of pendingUuids) {
-    const path = paths[uuid];
-    if (!path) {
-      delete nextPending[uuid];
-      continue;
-    }
-    try {
-      const ok = await retractDeletedPost({ ...config, path, expectedUuid: uuid });
-      if (ok) {
-        delete nextPending[uuid];
-        delete nextPaths[uuid];
-        retractedCount += 1;
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | Failed to retract deleted page at ${path}:`, err);
-    }
-  }
-
-  await game.settings.set(MODULE_ID, "pendingDeletions", nextPending);
-  await game.settings.set(MODULE_ID, "publishedPaths", nextPaths);
-  return retractedCount;
+  return uuids.map((uuid) => ({ uuid, path: paths[uuid] })).filter(({ path }) => !!path);
 }
 
 /**
@@ -423,7 +416,7 @@ async function retractPendingDeletions(config, { scopedToCaller = false } = {}) 
  * @returns {{uuid: string, oldPath: string}[]} Every post whose path changed since the last
  *   publish (its previous path, to retract). `[]` if nothing was renamed.
  */
-async function recordPublishedPaths(payload, worldSlug) {
+function planPublishedPaths(payload, worldSlug) {
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
   const next = { ...paths };
   const renamed = [];
@@ -435,8 +428,7 @@ async function recordPublishedPaths(payload, worldSlug) {
       next[post.uuid] = newPath;
     }
   }
-  await game.settings.set(MODULE_ID, "publishedPaths", next);
-  return renamed;
+  return { next, renamed };
 }
 
 /**
@@ -467,31 +459,38 @@ async function trackDeletedPage(page, entry) {
 }
 
 /**
- * Collects + fetches/content-addresses images + renders + pushes directly to GitHub -- no local
- * script, no download. Safe to call repeatedly: `putFile`/`putBinaryAssetIfMissing` (github.js)
- * skip anything that hasn't actually changed, so re-publishing everyone's journals just to publish
- * your own new post doesn't spam the repo history.
+ * Collects + fetches/content-addresses images + renders, then lands everything that changed --
+ * new and updated posts, images, settings files, and removals of unpublished, deleted or renamed-
+ * away posts -- as ONE commit (github.js commitChanges): one host build, and the site is never
+ * caught half-published. Safe to call repeatedly: unchanged files are skipped, and nothing changed
+ * means no commit at all.
  *
  * @param {object} [options]
  * @param {boolean} [options.scopedToCaller] A player's own "Publish to Web" (see "Player
  *   self-publish" below -- never set for the GM's, which always means everything): restricts
  *   collection to entries the calling user owns (collector.js's own `scopedToCaller`) and
- *   retraction to deletions their ownership snapshot covers ({@link retractPendingDeletions}'s own
+ *   retraction to deletions their ownership snapshot covers ({@link planPendingDeletions}'s own
  *   `scopedToCaller`) -- so a player's publish only ever touches what's actually theirs.
- *   Everything else here (asset fetching, `pushFiles`, `contentHashes`, `publishedPaths`) needs no
- *   scoping of its own: it just operates on whatever ends up in this already-scoped payload.
+ *   Everything else here (asset fetching, the commit, `publishedPaths`) needs no scoping of its
+ *   own: it just operates on whatever ends up in this already-scoped payload.
+ * @param {User|null} [options.forUser] A player's publish, run in a GM's browser on that player's
+ *   behalf by the publish relay (see "Publish relay" below): scoped exactly like
+ *   `scopedToCaller`, but to `forUser` rather than the current user. Publishing writes world
+ *   settings that players aren't allowed to change, so this is how their publishes happen.
+ * @param {{info: Function, warn: Function, error: Function}} [options.notify] Where result
+ *   messages go: on screen by default; the relay collects them to send back to the player.
  * @returns {Promise<void>}
  */
-async function publishToGitHub({ scopedToCaller = false } = {}) {
+async function publishToGitHub({ scopedToCaller = false, forUser = null, notify = screenNotify } = {}) {
   const config = getGithubConfig();
   if (!config) {
-    ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
+    notify.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
     return;
   }
 
-  const payload = collectJournalData({ scopedToCaller });
+  const payload = collectJournalData({ scopedToCaller, scopedToUser: forUser });
   if (payload.journalCount === 0) {
-    ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
+    notify.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
     return;
   }
 
@@ -501,106 +500,84 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // local copy from the start rather than Foundry's own (offline-fragile)
   // paths. A failed image fetch is logged and left pointing at Foundry
   // rather than failing the whole publish.
+  // Fetch every author-portrait/post-image reference and rewrite the payload
+  // to point at the resulting content-addressed /assets/<hash>.<ext> paths
+  // *before* rendering markdown, so the posts reference the copies from the
+  // start rather than Foundry's own (offline-fragile) paths. A failed image
+  // fetch is logged and left pointing at Foundry rather than failing the
+  // whole publish.
   const { urlMap, files: assetFiles } = await collectAssets(payload);
   rewriteAssetReferences(payload, urlMap);
 
-  const pushedAssets = await pushBinaryAssets({
-    owner: config.owner,
-    repo: config.repo,
-    token: config.token,
-    branch: config.branch,
-    files: assetFiles,
-    commitMessage: `world2web: add asset (${payload.world.title})`,
-  });
-
   const { worldSlug, files } = renderPayloadToFiles(payload);
-  // The same site settings Dev Sync downloads (collector.js's
-  // collectSiteConfig), so the two paths can't drift apart.
-  files.push(buildSiteConfigFile(payload.siteConfig));
-  files.push(buildWorldConfigFile(worldSlug, payload.worldConfig));
 
-  // Pushed last, so the host's final rebuild of this publish already has
-  // every new post in it.
+  // Everything this publish changes, gathered first and then committed as
+  // ONE commit (github.js commitChanges): one host build, and the site is
+  // never caught half-published.
+  const writes = [
+    ...files.filter((file) => !file.unpublished).map(({ path, content }) => ({ path, content })),
+    // The same site settings Dev Sync downloads (collector.js's
+    // collectSiteConfig), so the two paths can't drift apart.
+    buildSiteConfigFile(payload.siteConfig),
+    buildWorldConfigFile(worldSlug, payload.worldConfig),
+    // Content-addressed: the name is the hash, so an existing file is
+    // already right.
+    ...assetFiles.map(({ path, buffer }) => ({ path, buffer, ifMissing: true })),
+  ];
   const sitePin = await planSitePinFile(config);
-  if (sitePin) files.push(sitePin.file);
+  if (sitePin) writes.push(sitePin.file);
 
-  const { pushed, hashes } = await pushFiles({
+  // Removed in the same commit, each only if the file there is still that
+  // page's: unpublished pages, pages deleted in Foundry since the last
+  // publish (see "Deleted pages/entries"), and paths a renamed page has
+  // moved away from.
+  const unpublishedDeletions = files
+    .filter((file) => file.unpublished)
+    .map(({ path, uuid }) => ({ path, expectedUuid: uuid }));
+  const pending = planPendingDeletions({ scopedToCaller: scopedToCaller || !!forUser, userId: forUser?.id });
+  const { next: nextPaths, renamed } = planPublishedPaths(payload, worldSlug);
+  const deletions = [
+    ...unpublishedDeletions,
+    ...pending.map(({ uuid, path }) => ({ path, expectedUuid: uuid })),
+    ...renamed.map(({ uuid, oldPath }) => ({ path: oldPath, expectedUuid: uuid })),
+  ];
+
+  const result = await commitChanges({
     owner: config.owner,
     repo: config.repo,
     token: config.token,
     branch: config.branch,
-    files,
-    commitMessage: `world2web: publish from Foundry (${payload.world.title})`,
-    knownHashes: game.settings.get(MODULE_ID, "contentHashes"),
+    writes,
+    deletions,
+    message: `world2web: publish from Foundry (${payload.world.title})`,
   });
-  await game.settings.set(MODULE_ID, "contentHashes", hashes);
 
-  // Retracts anything deleted (not just unpublished) since the last
-  // publish -- see the "Deleted pages/entries" section below. Runs after
-  // the normal content push above so a genuinely fresh publish gets
-  // everything real synced first, though the two don't actually touch
-  // the same files either way.
-  const retractedCount = await retractPendingDeletions(
-    {
-      owner: config.owner,
-      repo: config.repo,
-      token: config.token,
-      branch: config.branch,
-    },
-    { scopedToCaller },
-  );
-
-  // Every post actually in this payload -- published or already-
-  // tombstoned by collector.js -- gets its path recorded, so a future
-  // deletion of any of them can be retracted the same way. Recorded
-  // whether or not pushFiles actually wrote each one (an unchanged file
-  // still needs its path tracked); a stale/never-pushed entry is harmless
-  // either way -- retractDeletedPost treats a 404 as "already gone."
-  const renamedPaths = await recordPublishedPaths(payload, worldSlug);
-
-  // A journal/page rename (or a root-override change) changes that post's
-  // computed slug and therefore its file path, even though the underlying
-  // page is still the exact same, still-published document -- pushFiles
-  // above already created the new file at the new path, but never touches
-  // the old one, so it would otherwise stay live on the site forever,
-  // duplicated alongside the new content. Retract each one the same way a
-  // genuinely deleted page is retracted -- expectedUuid guards against the
-  // same same-run-race retractDeletedPost's own doc comment describes.
-  let renamedRetractedCount = 0;
-  for (const { uuid, oldPath } of renamedPaths) {
-    try {
-      const ok = await retractDeletedPost({
-        owner: config.owner,
-        repo: config.repo,
-        token: config.token,
-        branch: config.branch,
-        path: oldPath,
-        expectedUuid: uuid,
-      });
-      if (ok) renamedRetractedCount += 1;
-    } catch (err) {
-      console.warn(`${MODULE_ID} | Failed to retract renamed-away path ${oldPath}:`, err);
-    }
+  // Only after the commit landed: record where every post now lives, and
+  // drop the pending deletions this publish handled (deleted, or already
+  // gone, or the path now belongs to another page -- nothing left to do
+  // for any of them).
+  for (const { uuid } of pending) delete nextPaths[uuid];
+  await game.settings.set(MODULE_ID, "publishedPaths", nextPaths);
+  if (pending.length) {
+    const nextPending = { ...game.settings.get(MODULE_ID, "pendingDeletions") };
+    for (const { uuid } of pending) delete nextPending[uuid];
+    await game.settings.set(MODULE_ID, "pendingDeletions", nextPending);
   }
 
-  // Confirms every currently-published page's local state (and any recent
-  // unpublish) as reflected as of now -- even when total === 0, since that
-  // still means everything already matched GitHub. Drives the
-  // uncommitted/committed coloring on the per-page and sync buttons (see
-  // isPagePending()).
-  await markSynced();
+  // A player's publish (forUser) covers only what they own, so it mustn't
+  // mark the GM's own pending changes as synced too.
+  if (!forUser) await markSynced();
 
-  if (sitePin && pushed.includes(sitePin.file.path)) {
-    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
+  if (sitePin && result.written.includes(sitePin.file.path)) {
+    notify.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
   }
 
-  const totalRetracted = retractedCount + renamedRetractedCount;
-  const total = pushed.length + pushedAssets.length + totalRetracted;
-  ui.notifications.info(
+  const posts = result.written.filter((path) => path.startsWith("content/worlds/") && path.endsWith(".md")).length;
+  const assets = result.written.filter((path) => path.startsWith("public/assets/")).length;
+  const retracted = result.deleted.length;
+  notify.info(
     `${t("Notify.Prefix")}: ${
-      total > 0
-        ? t("Notify.Published", { posts: pushed.length, assets: pushedAssets.length, retracted: totalRetracted })
-        : t("Notify.UpToDate")
+      result.commit ? t("Notify.Published", { posts, assets, retracted }) : t("Notify.UpToDate")
     }`,
   );
 }
@@ -756,7 +733,275 @@ Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   // Exposed for console use: game.modules.get("world2web").api.collect()
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
+  registerPublishRelay();
+  // The token move first: queued publishes need the token in place.
+  migrateTokenToWorld().then(processQueuedPublishes);
+  showQueuedPublishResult();
 });
+
+// --- Connect to GitHub ------------------------------------------------------------
+//
+// When the repository is set up but there's no token (never entered, or
+// cleared), a GM publishing gets asked for it right there rather than given
+// an error that sends them off to the settings.
+
+/**
+ * Whether publishing can go ahead, asking for the token first if the repository is configured
+ * but no token is saved.
+ *
+ * @returns {Promise<boolean>} `true` once publishing can go ahead.
+ */
+async function ensureBrowserConnected() {
+  if (getGithubConfig()) return true;
+  const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
+  const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
+  if (!owner || !repo) {
+    ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
+    return false;
+  }
+  return openConnectBrowserDialog(owner, repo);
+}
+
+/**
+ * Asks for the GitHub token for an already-configured repository, checks it can reach the repo,
+ * and saves it.
+ *
+ * @param {string} owner
+ * @param {string} repo
+ * @param {string|null} [errorMessage] Shown after a failed check, with the dialog reopened.
+ * @returns {Promise<boolean>} `true` if a working token was saved.
+ */
+async function openConnectBrowserDialog(owner, repo, errorMessage = null) {
+  const content = `
+    ${errorMessage ? `<p class="notification error">${errorMessage}</p>` : ""}
+    <p>${t("Dialog.ConnectBrowserIntro", { repo: `<strong>${escapeHtml(`${owner}/${repo}`)}</strong>` })}</p>
+    ${tokenFieldHtml({ owner, repo })}
+    <p class="hint"><a href="${escapeHtml(buildGithubTokenUrl(owner))}" target="_blank" rel="noopener">${t("Dialog.ConnectBrowserNewToken")}</a></p>
+  `;
+  const token = await foundry.applications.api.DialogV2.wait({
+    window: { title: t("Dialog.ConnectBrowserTitle") },
+    position: { width: 520 },
+    content,
+    buttons: [
+      {
+        action: "save",
+        label: "WORLD2WEB.Dialog.ConnectBrowserSave",
+        icon: "fa-solid fa-plug",
+        default: true,
+        callback: (event, button) => ({ token: button.form.elements.token.value.trim() }),
+      },
+      { action: "cancel", label: "WORLD2WEB.Dialog.Cancel", icon: "fa-solid fa-xmark" },
+    ],
+    rejectClose: false,
+  });
+  if (!token || typeof token === "string") return false; // cancelled or closed
+
+  const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
+  const check = await checkRepoAccess({ owner, repo, token: token.token, branch });
+  if (!check.ok) {
+    const message = t(`Dialog.RepoCheck.${check.reason}`, {
+      owner: escapeHtml(owner),
+      repo: escapeHtml(repo),
+      branch: escapeHtml(branch),
+      status: check.status ?? "",
+    });
+    return openConnectBrowserDialog(owner, repo, message);
+  }
+  await game.settings.set(MODULE_ID, "githubToken", token.token);
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BrowserConnected")}`);
+  return true;
+}
+
+// --- Publish relay -----------------------------------------------------------
+//
+// A player's Publish to Web (Allow Player Self-Publish) runs in a GM's browser
+// rather than their own: publishing writes world settings (content hashes,
+// published paths, sync state) that players aren't allowed to change. Their
+// browser asks the active GM's browser, over
+// the module's socket, to publish on their behalf: scoped to exactly what that
+// player owns, with the result messages sent back to them. A GM has to be
+// connected for this; the player is told so if none is.
+
+const RELAY_SOCKET = `module.${MODULE_ID}`;
+const RELAY_TIMEOUT_MS = 10 * 60 * 1000; // a first publish with many images takes a while
+const pendingRelays = new Map(); // requestId -> resolve, in the requesting player's browser
+
+/** Listens for publish requests (GMs) and their results (players). Called once, on "ready". */
+function registerPublishRelay() {
+  game.socket.on(RELAY_SOCKET, (message) => {
+    if (message?.type === "publish-request") handlePublishRequest(message);
+    else if (message?.type === "publish-result" && message.userId === game.user.id) {
+      pendingRelays.get(message.requestId)?.(message);
+      pendingRelays.delete(message.requestId);
+    }
+  });
+}
+
+/**
+ * In a GM's browser: publish for the requesting player. Only the active GM responds, so a world
+ * with several GMs connected publishes once.
+ *
+ * @param {{requestId: string, userId: string}} request
+ * @returns {Promise<void>}
+ */
+async function handlePublishRequest({ requestId, userId }) {
+  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
+  const reply = (messages) =>
+    game.socket.emit(RELAY_SOCKET, { type: "publish-result", requestId, userId, messages });
+  const player = game.users.get(userId);
+  if (!player || player.isGM || !game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) {
+    return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }]);
+  }
+
+  if (!getGithubConfig()) {
+    return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayGMNoToken")}` }]);
+  }
+  reply(await publishForPlayer(player));
+}
+
+/**
+ * In the active GM's browser: publish what `player` owns, collecting the result messages for them
+ * rather than showing them here. Shared by the live relay and the queue.
+ *
+ * @param {User} player
+ * @returns {Promise<{level: string, text: string}[]>}
+ */
+async function publishForPlayer(player) {
+  const messages = [];
+  const collect = (level) => (text) => messages.push({ level, text });
+  try {
+    await publishToGitHub({ forUser: player, notify: { info: collect("info"), warn: collect("warn"), error: collect("error") } });
+  } catch (err) {
+    console.error(`${MODULE_ID} | publish for ${player.name} failed`, err);
+    messages.push({ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}` });
+  }
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayPublishedFor", { name: player.name })}`);
+  return messages;
+}
+
+// --- Publish queue -------------------------------------------------------------
+//
+// A player who publishes while no GM is connected gets queued instead of
+// turned away: the request is a flag on their own User document (which
+// players may write), and the next GM to connect publishes it. The result
+// goes back the same way -- a flag the GM writes on the player's User -- so
+// the player sees it immediately if they're online, or at their next login.
+
+const QUEUE_FLAG = "publishRequestedAt";
+const RESULT_FLAG = "publishResult";
+
+/**
+ * In the active GM's browser, on connecting: publish every queued player request, oldest first.
+ *
+ * @returns {Promise<void>}
+ */
+async function processQueuedPublishes() {
+  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
+  const queued = game.users
+    .filter((user) => !user.isGM && user.getFlag(MODULE_ID, QUEUE_FLAG))
+    .sort((a, b) => a.getFlag(MODULE_ID, QUEUE_FLAG) - b.getFlag(MODULE_ID, QUEUE_FLAG));
+  if (queued.length && !getGithubConfig()) {
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueueNeedsToken", { count: queued.length })}`);
+    // Declined or failed: leave them queued for a GM browser that has it.
+    if (!(await ensureBrowserConnected())) return;
+  }
+  for (const player of queued) {
+    const messages = game.settings.get(MODULE_ID, "allowPlayerSelfPublish")
+      ? await publishForPlayer(player)
+      : [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }];
+    try {
+      await player.setFlag(MODULE_ID, RESULT_FLAG, { at: Date.now(), messages });
+      await player.unsetFlag(MODULE_ID, QUEUE_FLAG);
+    } catch (err) {
+      console.error(`${MODULE_ID} | couldn't record the queued publish result for ${player.name}`, err);
+    }
+  }
+}
+
+/**
+ * In a player's browser: show (then clear) the result of a queued publish, if there is one.
+ *
+ * @returns {Promise<void>}
+ */
+async function showQueuedPublishResult() {
+  if (game.user.isGM) return;
+  const result = game.user.getFlag(MODULE_ID, RESULT_FLAG);
+  if (!result) return;
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueuedResultIntro")}`);
+  for (const { level, text } of result.messages ?? []) {
+    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
+  }
+  await game.user.unsetFlag(MODULE_ID, RESULT_FLAG);
+}
+
+Hooks.on("updateUser", (user, changes) => {
+  if (user.id === game.user?.id && changes.flags?.[MODULE_ID]?.[RESULT_FLAG]) showQueuedPublishResult();
+});
+
+/**
+ * In a player's browser: ask the active GM's browser to publish what this player owns, and show
+ * its result messages here.
+ *
+ * @returns {Promise<void>}
+ */
+async function publishViaGM() {
+  if (!game.users.activeGM) {
+    await game.user.setFlag(MODULE_ID, QUEUE_FLAG, Date.now());
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayQueued")}`);
+    return;
+  }
+  const requestId = foundry.utils.randomID();
+  const result = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingRelays.delete(requestId);
+      resolve({ messages: [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayTimeout")}` }] });
+    }, RELAY_TIMEOUT_MS);
+    pendingRelays.set(requestId, (message) => {
+      clearTimeout(timer);
+      resolve(message);
+    });
+    game.socket.emit(RELAY_SOCKET, { type: "publish-request", requestId, userId: game.user.id });
+  });
+  for (const { level, text } of result.messages ?? []) {
+    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
+  }
+}
+
+/**
+ * Unreleased 0.23.0 builds briefly kept the token outside the world setting: per user (which
+ * turned out to reach players anyway) and then per browser. If this world has no token but one of
+ * those does, move it back into the world setting; then clear the leftovers, so nothing stale is
+ * left behind. Only touches anything for a GM, and only when there's something to move or clear.
+ *
+ * @returns {Promise<void>}
+ */
+async function migrateTokenToWorld() {
+  if (!game.user.isGM) return;
+  try {
+    const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
+    const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
+    const browserTokens = game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {};
+    const repoKey = `${owner ?? ""}/${repo ?? ""}`.toLowerCase();
+    const candidate =
+      String(browserTokens[repoKey] ?? "").trim() ||
+      game.settings.get(MODULE_ID, "githubBrowserToken")?.trim() ||
+      game.settings.get(MODULE_ID, "githubUserToken")?.trim();
+    if (candidate && !game.settings.get(MODULE_ID, "githubToken")?.trim()) {
+      await game.settings.set(MODULE_ID, "githubToken", candidate);
+    }
+    if (repoKey in browserTokens) {
+      const rest = { ...browserTokens };
+      delete rest[repoKey];
+      await game.settings.set(MODULE_ID, "githubBrowserTokens", rest);
+    }
+    if (game.settings.get(MODULE_ID, "githubBrowserToken")) await game.settings.set(MODULE_ID, "githubBrowserToken", "");
+    for (const doc of game.settings.storage.get("world").filter((d) => d.key === `${MODULE_ID}.githubUserToken`)) {
+      await doc.delete();
+    }
+  } catch (err) {
+    console.error(`${MODULE_ID} | Couldn't move the GitHub token back to the world setting`, err);
+  }
+}
 
 /**
  * Builds (but doesn't insert) the Dev Sync button -- shared by the initial render and the
@@ -836,7 +1081,11 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
       // allowPlayerSelfPublish is on) is scoped to just what they own --
       // see the "Player self-publish" section further down for what that
       // actually touches.
-      await publishToGitHub({ scopedToCaller: !game.user.isGM });
+      // A player's publish runs in a connected GM's browser -- see
+      // "Publish relay".
+      if (game.user.isGM) {
+        if (await ensureBrowserConnected()) await publishToGitHub();
+      } else await publishViaGM();
     } catch (err) {
       console.error(`${MODULE_ID} | publish to web failed`, err);
       ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}`);
@@ -927,7 +1176,7 @@ function escapeHtml(str) {
 // own "Publish to Web" click is scoped to just what they own: only their
 // own owned journals get collected (collector.js's collectJournalData()'s own
 // scopedToCaller), and only their own owned deletions get retracted
-// (retractPendingDeletions()'s own scopedToCaller, checked against the
+// (planPendingDeletions()'s own scopedToCaller, checked against the
 // ownership snapshot trackDeletedPage() captures at delete time -- the
 // document itself won't exist anymore to check directly by then).
 // Dev Sync stays GM-only unconditionally regardless of this setting --
@@ -1151,10 +1400,31 @@ async function openDeployStep2CreateToken(owner, repoName) {
  *   retyping the other two.
  * @returns {Promise<void>}
  */
-async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
+/**
+ * The GitHub token input, shared by the GitHub Connection panel, the Setup Wizard's last step and
+ * the "Connect to GitHub" prompt. Marked up as a username + password pair -- the repository as
+ * the (hidden) username, the token as the password -- so browsers and password managers offer to
+ * save it and fill it in later.
+ *
+ * @param {{owner?: string, repo?: string, token?: string}} values
+ * @returns {string} HTML.
+ */
+function tokenFieldHtml({ owner, repo, token }) {
+  const account = owner && repo ? `github.com/${owner}/${repo}` : "github.com";
+  return `
+    <input type="text" name="username" autocomplete="username" value="${escapeHtml(account)}"
+           style="display:none" aria-hidden="true" tabindex="-1">
+    <div class="form-group">
+      <label>${t("Settings.GithubToken.Name")}</label>
+      <input type="password" name="token" autocomplete="current-password" value="${escapeHtml(token ?? "")}">
+      <p class="hint">${t("Settings.GithubToken.Hint")}</p>
+    </div>`;
+}
+
+async function openDeployStep3SaveSettings(defaults, errorMessage = null, { standalone = false } = {}) {
   const error = errorMessage ? `<p class="notification error">${errorMessage}</p>` : "";
   const content = `
-    <p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>
+    ${standalone ? "" : `<p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>`}
     ${error}
     <p>${t("Dialog.DeploySiteSaveIntro")}</p>
     <div class="form-group">
@@ -1165,15 +1435,22 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
       <label>${t("Settings.GithubRepo.Name")}</label>
       <input type="text" name="repo" value="${escapeHtml(defaults.repo ?? "")}">
     </div>
-    <div class="form-group">
-      <label>${t("Settings.GithubToken.Name")}</label>
-      <input type="password" name="token" value="${escapeHtml(defaults.token ?? "")}">
-      <p class="hint">${t("Settings.GithubToken.Hint")}</p>
-    </div>
+    ${
+      // Branch only in the standalone GitHub Connection panel: a site created
+      // by the wizard always starts on "main".
+      standalone
+        ? `<div class="form-group">
+      <label>${t("Settings.GithubBranch.Name")}</label>
+      <input type="text" name="branch" value="${escapeHtml(defaults.branch ?? "main")}">
+      <p class="hint">${t("Settings.GithubBranch.Hint")}</p>
+    </div>`
+        : ""
+    }
+    ${tokenFieldHtml(defaults)}
   `;
 
   const result = await foundry.applications.api.DialogV2.wait({
-    window: { title: t("Dialog.DeploySiteTitle") },
+    window: { title: t(standalone ? "Dialog.GithubConnectionTitle" : "Dialog.DeploySiteTitle") },
     position: { width: 520 },
     content,
     buttons: [
@@ -1186,6 +1463,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
           owner: button.form.elements.owner.value.trim(),
           repo: button.form.elements.repo.value.trim(),
           token: button.form.elements.token.value.trim(),
+          branch: button.form.elements.branch?.value.trim(),
         }),
       },
       // Only offered after a failed connection check -- an escape hatch for
@@ -1202,6 +1480,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
                 owner: button.form.elements.owner.value.trim(),
                 repo: button.form.elements.repo.value.trim(),
                 token: button.form.elements.token.value.trim(),
+                branch: button.form.elements.branch?.value.trim(),
               }),
             },
           ]
@@ -1217,7 +1496,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
   // message, instead of as a vague failure on the first Publish to Web. On
   // failure, re-open this same step with everything still filled in.
   if (!result.force) {
-    const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
+    const branch = result.branch || game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
     const check = await checkRepoAccess({ ...result, branch });
     if (!check.ok) {
       const message = t(`Dialog.RepoCheck.${check.reason}`, {
@@ -1226,12 +1505,13 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
         branch: escapeHtml(branch),
         status: check.status ?? "",
       });
-      return openDeployStep3SaveSettings(result, message);
+      return openDeployStep3SaveSettings(result, message, { standalone });
     }
   }
 
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
+  if (result.branch !== undefined) await game.settings.set(MODULE_ID, "githubBranch", result.branch || "main");
   await game.settings.set(MODULE_ID, "githubToken", result.token);
 
   // game.settings.set() only updates the stored value -- it doesn't touch
@@ -1276,6 +1556,26 @@ async function openDeploySiteDialog() {
   // old repo setting here -- it's what step 2 just told them to go create,
   // so step 3 needs to match it, not silently fall back to a stale value.
   await openDeployStep3SaveSettings({ owner, repo: step1.repoName || repo, token });
+}
+
+/**
+ * The GitHub Connection button in Configure Settings (GM only): the Setup Wizard's last step on
+ * its own -- repo owner, repo name and this GM's token, with the same connection check -- for
+ * changing a token or repo without creating a new site.
+ *
+ * @returns {Promise<void>}
+ */
+async function openGithubConnectionDialog() {
+  await openDeployStep3SaveSettings(
+    {
+      owner: game.settings.get(MODULE_ID, "githubOwner")?.trim(),
+      repo: game.settings.get(MODULE_ID, "githubRepo")?.trim(),
+      token: game.settings.get(MODULE_ID, "githubToken")?.trim(),
+      branch: game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main",
+    },
+    null,
+    { standalone: true },
+  );
 }
 
 /**
@@ -1750,10 +2050,8 @@ Hooks.on("updateSetting", (setting) => {
  * published/unpublished flag itself -- hasn't been confirmed by a successful sync (Publish to
  * Web, or Dev Sync in dev mode) yet. A page that's never been touched at all (no
  * `flags.updatedAt`) is never pending; there's nothing local to reconcile. Note: for an unpublish,
- * this only reflects whether a sync has run *since* the unpublish -- for Publish to Web
- * specifically, it doesn't (yet) mean the file was actually removed from GitHub, since
- * `pushFiles`/`putFile` only ever create or update files, never delete (see `collectPost()` in
- * collector.js for the soft-delete tombstone that works around that). Dev Sync never pushes
+ * this only reflects whether a sync has run *since* the unpublish; after a Publish to Web, the
+ * file has been removed from GitHub (in that publish's commit). Dev Sync never pushes
  * anywhere at all -- it only counts here as "the GM has taken the current state out of Foundry," a
  * separate, weaker claim than "it's live."
  *

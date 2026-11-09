@@ -158,12 +158,31 @@ function postFrontmatter(worldSlug, journal, post) {
 }
 
 /**
+ * The frontmatter kept for an unpublished post: everything the module and site need to track and
+ * hide it (ids, slugs, title, dates, the `unpublished` flag), minus anything with content of its
+ * own -- the author's biography and the front image. The post's body is dropped by the caller.
+ * Used for the Dev Sync ingest's marker files; Publish to Web removes an unpublished post's file
+ * outright instead (main.js).
+ *
+ * @param {object} frontmatter A post's frontmatter.
+ * @returns {object} A copy with `unpublished: true` and no biography or front image.
+ */
+export function stripUnpublishedContent(frontmatter) {
+  return {
+    ...frontmatter,
+    author: frontmatter.author ? { ...frontmatter.author, bio: "" } : frontmatter.author,
+    frontImage: "",
+    unpublished: true,
+  };
+}
+
+/**
  * Renders a `collectJournalData()` payload into a flat list of `{path, content}` files, ready to
- * push individually (e.g. via github.js's `putFile`). `path` is relative to the repo root,
+ * commit (see github.js's `commitChanges`). `path` is relative to the repo root,
  * matching the on-disk layout the site-template repo's `scripts/ingest.js` produces.
  *
  * @param {object} payload A payload from `collectJournalData()` (see collector.js).
- * @returns {{worldSlug: string, files: {path: string, content: string}[]}} Never
+ * @returns {{worldSlug: string, files: {path: string, content: string, uuid?: string, unpublished?: boolean}[]}} Never
  *   `null`/`undefined`; `files` is `[]` if `payload.journals` has no posts at all.
  */
 export function renderPayloadToFiles(payload) {
@@ -174,9 +193,21 @@ export function renderPayloadToFiles(payload) {
   const files = [];
   for (const journal of journals) {
     for (const post of journal.posts) {
+      const frontmatter = postFrontmatter(worldSlug, journal, post);
       files.push({
         path: `content/worlds/${worldSlug}/journals/${journal._slug}/${post._slug}.md`,
-        content: `${toFrontmatter(postFrontmatter(worldSlug, journal, post))}\n${post.html}\n`,
+        // Which page this file is, and whether it's unpublished: Publish to
+        // Web removes an unpublished post's file outright (main.js), checking
+        // first that the file there is still this page's.
+        uuid: post.uuid,
+        unpublished: !!post.unpublished,
+        // An unpublished post's file stays in the repo (as the marker that
+        // hides it from the site), but without its content: a GM who
+        // unpublishes a page expects its text gone, and the repo is often
+        // public. See stripUnpublishedContent().
+        content: post.unpublished
+          ? `${toFrontmatter(stripUnpublishedContent(frontmatter))}\n`
+          : `${toFrontmatter(frontmatter)}\n${post.html}\n`,
       });
     }
   }
