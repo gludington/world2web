@@ -8,7 +8,6 @@
     "verified": "14"
   },
   "esmodules": ["scripts/main.js"],
-  "socket": true,
   "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }],
   "packs": [
     {

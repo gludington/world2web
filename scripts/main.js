@@ -473,22 +473,18 @@ async function trackDeletedPage(page, entry) {
  *   `scopedToCaller`) -- so a player's publish only ever touches what's actually theirs.
  *   Everything else here (asset fetching, the commit, `publishedPaths`) needs no scoping of its
  *   own: it just operates on whatever ends up in this already-scoped payload.
- * @param {User|null} [options.forUser] A player's publish, run in a GM's browser on that player's
- *   behalf by the publish relay (see "Publish relay" below): scoped exactly like
- *   `scopedToCaller`, but to `forUser` rather than the current user. Publishing writes world
- *   settings that players aren't allowed to change, so this is how their publishes happen.
  * @param {{info: Function, warn: Function, error: Function}} [options.notify] Where result
- *   messages go: on screen by default; the relay collects them to send back to the player.
+ *   messages go: on screen by default.
  * @returns {Promise<void>}
  */
-async function publishToGitHub({ scopedToCaller = false, forUser = null, notify = screenNotify } = {}) {
+async function publishToGitHub({ scopedToCaller = false, notify = screenNotify } = {}) {
   const config = getGithubConfig();
   if (!config) {
     notify.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
     return;
   }
 
-  const payload = collectJournalData({ scopedToCaller, scopedToUser: forUser });
+  const payload = collectJournalData({ scopedToCaller });
   if (payload.journalCount === 0) {
     notify.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
     return;
@@ -534,7 +530,7 @@ async function publishToGitHub({ scopedToCaller = false, forUser = null, notify 
   const unpublishedDeletions = files
     .filter((file) => file.unpublished)
     .map(({ path, uuid }) => ({ path, expectedUuid: uuid }));
-  const pending = planPendingDeletions({ scopedToCaller: scopedToCaller || !!forUser, userId: forUser?.id });
+  const pending = planPendingDeletions({ scopedToCaller });
   const { next: nextPaths, renamed } = planPublishedPaths(payload, worldSlug);
   const deletions = [
     ...unpublishedDeletions,
@@ -552,21 +548,23 @@ async function publishToGitHub({ scopedToCaller = false, forUser = null, notify 
     message: `world2web: publish from Foundry (${payload.world.title})`,
   });
 
-  // Only after the commit landed: record where every post now lives, and
-  // drop the pending deletions this publish handled (deleted, or already
-  // gone, or the path now belongs to another page -- nothing left to do
-  // for any of them).
-  for (const { uuid } of pending) delete nextPaths[uuid];
-  await game.settings.set(MODULE_ID, "publishedPaths", nextPaths);
-  if (pending.length) {
-    const nextPending = { ...game.settings.get(MODULE_ID, "pendingDeletions") };
-    for (const { uuid } of pending) delete nextPending[uuid];
-    await game.settings.set(MODULE_ID, "pendingDeletions", nextPending);
+  // Only after the commit landed: record where every post now lives, drop
+  // the pending deletions this publish handled, and mark everything synced.
+  // These are world settings, which only GMs may change by default -- so a
+  // player's publish (Allow Player Self-Publish) skips them. Nothing is lost:
+  // the GM's next publish recomputes the same bookkeeping (a rename is still
+  // noticed against the stored old path, and an already-removed file just
+  // clears its pending deletion). The player's buttons stay amber until then.
+  if (game.user.can("SETTINGS_MODIFY")) {
+    for (const { uuid } of pending) delete nextPaths[uuid];
+    await game.settings.set(MODULE_ID, "publishedPaths", nextPaths);
+    if (pending.length) {
+      const nextPending = { ...game.settings.get(MODULE_ID, "pendingDeletions") };
+      for (const { uuid } of pending) delete nextPending[uuid];
+      await game.settings.set(MODULE_ID, "pendingDeletions", nextPending);
+    }
+    if (!scopedToCaller) await markSynced();
   }
-
-  // A player's publish (forUser) covers only what they own, so it mustn't
-  // mark the GM's own pending changes as synced too.
-  if (!forUser) await markSynced();
 
   if (sitePin && result.written.includes(sitePin.file.path)) {
     notify.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
@@ -733,10 +731,7 @@ Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   // Exposed for console use: game.modules.get("world2web").api.collect()
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
-  registerPublishRelay();
-  // The token move first: queued publishes need the token in place.
-  migrateTokenToWorld().then(processQueuedPublishes);
-  showQueuedPublishResult();
+  migrateTokenToWorld();
 });
 
 // --- Connect to GitHub ------------------------------------------------------------
@@ -810,161 +805,6 @@ async function openConnectBrowserDialog(owner, repo, errorMessage = null) {
   await game.settings.set(MODULE_ID, "githubToken", token.token);
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BrowserConnected")}`);
   return true;
-}
-
-// --- Publish relay -----------------------------------------------------------
-//
-// A player's Publish to Web (Allow Player Self-Publish) runs in a GM's browser
-// rather than their own: publishing writes world settings (content hashes,
-// published paths, sync state) that players aren't allowed to change. Their
-// browser asks the active GM's browser, over
-// the module's socket, to publish on their behalf: scoped to exactly what that
-// player owns, with the result messages sent back to them. A GM has to be
-// connected for this; the player is told so if none is.
-
-const RELAY_SOCKET = `module.${MODULE_ID}`;
-const RELAY_TIMEOUT_MS = 10 * 60 * 1000; // a first publish with many images takes a while
-const pendingRelays = new Map(); // requestId -> resolve, in the requesting player's browser
-
-/** Listens for publish requests (GMs) and their results (players). Called once, on "ready". */
-function registerPublishRelay() {
-  game.socket.on(RELAY_SOCKET, (message) => {
-    if (message?.type === "publish-request") handlePublishRequest(message);
-    else if (message?.type === "publish-result" && message.userId === game.user.id) {
-      pendingRelays.get(message.requestId)?.(message);
-      pendingRelays.delete(message.requestId);
-    }
-  });
-}
-
-/**
- * In a GM's browser: publish for the requesting player. Only the active GM responds, so a world
- * with several GMs connected publishes once.
- *
- * @param {{requestId: string, userId: string}} request
- * @returns {Promise<void>}
- */
-async function handlePublishRequest({ requestId, userId }) {
-  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
-  const reply = (messages) =>
-    game.socket.emit(RELAY_SOCKET, { type: "publish-result", requestId, userId, messages });
-  const player = game.users.get(userId);
-  if (!player || player.isGM || !game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) {
-    return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }]);
-  }
-
-  if (!getGithubConfig()) {
-    return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayGMNoToken")}` }]);
-  }
-  reply(await publishForPlayer(player));
-}
-
-/**
- * In the active GM's browser: publish what `player` owns, collecting the result messages for them
- * rather than showing them here. Shared by the live relay and the queue.
- *
- * @param {User} player
- * @returns {Promise<{level: string, text: string}[]>}
- */
-async function publishForPlayer(player) {
-  const messages = [];
-  const collect = (level) => (text) => messages.push({ level, text });
-  try {
-    await publishToGitHub({ forUser: player, notify: { info: collect("info"), warn: collect("warn"), error: collect("error") } });
-  } catch (err) {
-    console.error(`${MODULE_ID} | publish for ${player.name} failed`, err);
-    messages.push({ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}` });
-  }
-  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayPublishedFor", { name: player.name })}`);
-  return messages;
-}
-
-// --- Publish queue -------------------------------------------------------------
-//
-// A player who publishes while no GM is connected gets queued instead of
-// turned away: the request is a flag on their own User document (which
-// players may write), and the next GM to connect publishes it. The result
-// goes back the same way -- a flag the GM writes on the player's User -- so
-// the player sees it immediately if they're online, or at their next login.
-
-const QUEUE_FLAG = "publishRequestedAt";
-const RESULT_FLAG = "publishResult";
-
-/**
- * In the active GM's browser, on connecting: publish every queued player request, oldest first.
- *
- * @returns {Promise<void>}
- */
-async function processQueuedPublishes() {
-  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
-  const queued = game.users
-    .filter((user) => !user.isGM && user.getFlag(MODULE_ID, QUEUE_FLAG))
-    .sort((a, b) => a.getFlag(MODULE_ID, QUEUE_FLAG) - b.getFlag(MODULE_ID, QUEUE_FLAG));
-  if (queued.length && !getGithubConfig()) {
-    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueueNeedsToken", { count: queued.length })}`);
-    // Declined or failed: leave them queued for a GM browser that has it.
-    if (!(await ensureBrowserConnected())) return;
-  }
-  for (const player of queued) {
-    const messages = game.settings.get(MODULE_ID, "allowPlayerSelfPublish")
-      ? await publishForPlayer(player)
-      : [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }];
-    try {
-      await player.setFlag(MODULE_ID, RESULT_FLAG, { at: Date.now(), messages });
-      await player.unsetFlag(MODULE_ID, QUEUE_FLAG);
-    } catch (err) {
-      console.error(`${MODULE_ID} | couldn't record the queued publish result for ${player.name}`, err);
-    }
-  }
-}
-
-/**
- * In a player's browser: show (then clear) the result of a queued publish, if there is one.
- *
- * @returns {Promise<void>}
- */
-async function showQueuedPublishResult() {
-  if (game.user.isGM) return;
-  const result = game.user.getFlag(MODULE_ID, RESULT_FLAG);
-  if (!result) return;
-  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueuedResultIntro")}`);
-  for (const { level, text } of result.messages ?? []) {
-    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
-  }
-  await game.user.unsetFlag(MODULE_ID, RESULT_FLAG);
-}
-
-Hooks.on("updateUser", (user, changes) => {
-  if (user.id === game.user?.id && changes.flags?.[MODULE_ID]?.[RESULT_FLAG]) showQueuedPublishResult();
-});
-
-/**
- * In a player's browser: ask the active GM's browser to publish what this player owns, and show
- * its result messages here.
- *
- * @returns {Promise<void>}
- */
-async function publishViaGM() {
-  if (!game.users.activeGM) {
-    await game.user.setFlag(MODULE_ID, QUEUE_FLAG, Date.now());
-    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayQueued")}`);
-    return;
-  }
-  const requestId = foundry.utils.randomID();
-  const result = await new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      pendingRelays.delete(requestId);
-      resolve({ messages: [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayTimeout")}` }] });
-    }, RELAY_TIMEOUT_MS);
-    pendingRelays.set(requestId, (message) => {
-      clearTimeout(timer);
-      resolve(message);
-    });
-    game.socket.emit(RELAY_SOCKET, { type: "publish-request", requestId, userId: game.user.id });
-  });
-  for (const { level, text } of result.messages ?? []) {
-    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
-  }
 }
 
 /**
@@ -1081,11 +921,12 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
       // allowPlayerSelfPublish is on) is scoped to just what they own --
       // see the "Player self-publish" section further down for what that
       // actually touches.
-      // A player's publish runs in a connected GM's browser -- see
-      // "Publish relay".
+      // GM = everything, always. A player (only reachable here when Allow
+      // Player Self-Publish is on) publishes just what they own, from their
+      // own browser, with the world's token.
       if (game.user.isGM) {
         if (await ensureBrowserConnected()) await publishToGitHub();
-      } else await publishViaGM();
+      } else await publishToGitHub({ scopedToCaller: true });
     } catch (err) {
       console.error(`${MODULE_ID} | publish to web failed`, err);
       ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}`);
