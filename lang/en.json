@@ -65,7 +65,7 @@
       "Prefix": "World2Web",
       "MissingGithubConfig": "can't publish -- set up your site's GitHub repository and token under Configure Settings → World2Web → GitHub Connection.",
       "NothingToPublish": "no journals are marked as published -- nothing to publish.",
-      "Published": "pushed {posts} post(s) and {assets} asset(s) to GitHub, retracted {retracted} deleted page(s).",
+      "Published": "published in one commit: {posts} post(s), {assets} image(s), and {retracted} page(s) removed from the site.",
       "UpToDate": "everything already up to date on GitHub.",
       "Collected": "collected {count} journal(s).",
       "PublishFailed": "publish failed -- {error}",

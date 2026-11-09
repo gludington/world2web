@@ -511,11 +511,9 @@ function resolvePostOrder(entry) {
  * Collects one page as a post, or returns `null` if it isn't collectible.
  *
  * A never-published page (no `publishedAt`) is a plain draft and excluded. A previously-published,
- * now-unpublished page is still collected -- with `unpublished: true` -- rather than dropped,
- * since there's no way to delete an already-pushed file from GitHub (`putFile` in github.js only
- * ever creates or updates). This is a soft delete: render.js and the site-template repo's
- * `scripts/ingest.js` still write the file (a tombstone, still in git history), and the site's own
- * content queries filter out anything with that flag set.
+ * now-unpublished page is still collected -- with `unpublished: true` -- rather than dropped, so
+ * its already-published file can be dealt with: Publish to Web removes it from the repo in its
+ * commit (main.js), and Dev Sync's ingest writes a text-free marker the site skips.
  *
  * A page whose type isn't publishable (see {@link isPageTypePublishable}) is excluded the same as
  * a draft, even if `publishedAt` is somehow set -- covers a page whose type changed after
