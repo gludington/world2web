@@ -17,7 +17,7 @@
       "GithubConnection": {
         "Name": "GitHub Connection",
         "Label": "Edit Connection",
-        "Hint": "Your site's GitHub repository (owner, name and branch) and your personal access token, in one place. The token is stored for your user only -- other users, including players, never receive it -- so each GM who publishes enters their own."
+        "Hint": "Your site's GitHub repository (owner, name and branch) and your personal access token, in one place. The token is kept in this browser only and never sent to Foundry's server, so other users, including players, can't see it. Enter it once in each browser you publish from."
       },
       "GithubOwner": {
         "Name": "GitHub Repo Owner",
@@ -63,7 +63,7 @@
     },
     "Notify": {
       "Prefix": "World2Web",
-      "MissingGithubConfig": "can't publish -- GitHub Repo Owner, Repo Name, and Token must all be set first. Check Configure Settings.",
+      "MissingGithubConfig": "can't publish -- this browser needs your site's GitHub repository and token. Add them under Configure Settings → World2Web → GitHub Connection.",
       "NothingToPublish": "no journals are marked as published -- nothing to publish.",
       "Published": "pushed {posts} post(s) and {assets} asset(s) to GitHub, retracted {retracted} deleted page(s).",
       "UpToDate": "everything already up to date on GitHub.",
@@ -79,12 +79,14 @@
       "DeploySiteSaved": "connected to GitHub and saved. Mark a journal as published, publish a page, then click Publish to Web.",
       "SiteUpdated": "your site is being updated to World2Web site version {version}.",
       "HomepageLinksSaved": "saved {count} homepage link(s). They'll appear on your site after the next Publish to Web.",
-      "TokenMigrated": "your GitHub token is now stored for your user only, so players no longer receive it. Any other GM who publishes needs to enter their own token under Configure Settings → World2Web → GitHub Connection.",
+      "TokenMigrated": "your GitHub token is now kept in this browser only, so players no longer receive it. Enter it once in any other browser you publish from (Configure Settings → World2Web → GitHub Connection); any other GM needs to enter theirs too.",
       "RelayRefused": "your publish was refused: Allow Player Self-Publish is off.",
       "RelayPublishedFor": "published {name}'s journals for them.",
       "RelayTimeout": "no reply from the GM's browser. The publish may still be running; check with your GM.",
       "RelayQueued": "no GM is connected right now, so your publish is queued. It'll go live as soon as a GM connects, and you'll see the result here (or next time you log in).",
-      "QueuedResultIntro": "your queued publish has run:"
+      "QueuedResultIntro": "your queued publish has run:",
+      "QueueNeedsToken": "{count} player publish request(s) are waiting, but this browser has no GitHub token yet. Add it under Configure Settings → World2Web → GitHub Connection, then reload to publish them.",
+      "RelayGMNoToken": "the GM's browser doesn't have a GitHub token set up yet, so your publish couldn't run. Ask your GM to add it under GitHub Connection, then publish again."
     },
     "Button": {
       "DevSync": "Dev Sync",
