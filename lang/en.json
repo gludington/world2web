@@ -82,8 +82,9 @@
       "TokenMigrated": "your GitHub token is now stored for your user only, so players no longer receive it. Any other GM who publishes needs to enter their own token under Configure Settings → World2Web → GitHub Connection.",
       "RelayRefused": "your publish was refused: Allow Player Self-Publish is off.",
       "RelayPublishedFor": "published {name}'s journals for them.",
-      "RelayNoGM": "a GM needs to be connected to publish. Your changes are saved, so try again when a GM is online.",
-      "RelayTimeout": "no reply from the GM's browser. The publish may still be running; check with your GM."
+      "RelayTimeout": "no reply from the GM's browser. The publish may still be running; check with your GM.",
+      "RelayQueued": "no GM is connected right now, so your publish is queued. It'll go live as soon as a GM connects, and you'll see the result here (or next time you log in).",
+      "QueuedResultIntro": "your queued publish has run:"
     },
     "Button": {
       "DevSync": "Dev Sync",

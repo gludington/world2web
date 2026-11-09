@@ -802,8 +802,10 @@ Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   // Exposed for console use: game.modules.get("world2web").api.collect()
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
-  migrateLegacyToken();
   registerPublishRelay();
+  // The migration first: queued publishes need this GM's token in place.
+  migrateLegacyToken().then(processQueuedPublishes);
+  showQueuedPublishResult();
 });
 
 // --- Publish relay -----------------------------------------------------------
@@ -846,6 +848,17 @@ async function handlePublishRequest({ requestId, userId }) {
     return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }]);
   }
 
+  reply(await publishForPlayer(player));
+}
+
+/**
+ * In the active GM's browser: publish what `player` owns, collecting the result messages for them
+ * rather than showing them here. Shared by the live relay and the queue.
+ *
+ * @param {User} player
+ * @returns {Promise<{level: string, text: string}[]>}
+ */
+async function publishForPlayer(player) {
   const messages = [];
   const collect = (level) => (text) => messages.push({ level, text });
   try {
@@ -855,8 +868,62 @@ async function handlePublishRequest({ requestId, userId }) {
     messages.push({ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}` });
   }
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayPublishedFor", { name: player.name })}`);
-  reply(messages);
+  return messages;
 }
+
+// --- Publish queue -------------------------------------------------------------
+//
+// A player who publishes while no GM is connected gets queued instead of
+// turned away: the request is a flag on their own User document (which
+// players may write), and the next GM to connect publishes it. The result
+// goes back the same way -- a flag the GM writes on the player's User -- so
+// the player sees it immediately if they're online, or at their next login.
+
+const QUEUE_FLAG = "publishRequestedAt";
+const RESULT_FLAG = "publishResult";
+
+/**
+ * In the active GM's browser, on connecting: publish every queued player request, oldest first.
+ *
+ * @returns {Promise<void>}
+ */
+async function processQueuedPublishes() {
+  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
+  const queued = game.users
+    .filter((user) => !user.isGM && user.getFlag(MODULE_ID, QUEUE_FLAG))
+    .sort((a, b) => a.getFlag(MODULE_ID, QUEUE_FLAG) - b.getFlag(MODULE_ID, QUEUE_FLAG));
+  for (const player of queued) {
+    const messages = game.settings.get(MODULE_ID, "allowPlayerSelfPublish")
+      ? await publishForPlayer(player)
+      : [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }];
+    try {
+      await player.setFlag(MODULE_ID, RESULT_FLAG, { at: Date.now(), messages });
+      await player.unsetFlag(MODULE_ID, QUEUE_FLAG);
+    } catch (err) {
+      console.error(`${MODULE_ID} | couldn't record the queued publish result for ${player.name}`, err);
+    }
+  }
+}
+
+/**
+ * In a player's browser: show (then clear) the result of a queued publish, if there is one.
+ *
+ * @returns {Promise<void>}
+ */
+async function showQueuedPublishResult() {
+  if (game.user.isGM) return;
+  const result = game.user.getFlag(MODULE_ID, RESULT_FLAG);
+  if (!result) return;
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.QueuedResultIntro")}`);
+  for (const { level, text } of result.messages ?? []) {
+    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
+  }
+  await game.user.unsetFlag(MODULE_ID, RESULT_FLAG);
+}
+
+Hooks.on("updateUser", (user, changes) => {
+  if (user.id === game.user?.id && changes.flags?.[MODULE_ID]?.[RESULT_FLAG]) showQueuedPublishResult();
+});
 
 /**
  * In a player's browser: ask the active GM's browser to publish what this player owns, and show
@@ -866,7 +933,8 @@ async function handlePublishRequest({ requestId, userId }) {
  */
 async function publishViaGM() {
   if (!game.users.activeGM) {
-    ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.RelayNoGM")}`);
+    await game.user.setFlag(MODULE_ID, QUEUE_FLAG, Date.now());
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayQueued")}`);
     return;
   }
   const requestId = foundry.utils.randomID();
