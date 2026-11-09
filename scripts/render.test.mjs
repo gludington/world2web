@@ -297,3 +297,28 @@ test("buildWorldConfigFile writes the world's own Homepage Links into its own fo
   assert.ok(file.content.endsWith("}\n"));
   assert.deepEqual(JSON.parse(buildWorldConfigFile("w").content), { homepageLinks: [] });
 });
+
+test("an unpublished post keeps only its tracking frontmatter: no text, biography or front image", () => {
+  const payload = samplePayload();
+  const post = payload.journals[0].posts[0];
+  Object.assign(post, {
+    html: "<p>The secret lair is under the mill.</p>",
+    unpublished: true,
+    frontImage: "/assets/lair.webp",
+    author: { ...post.author, bio: "<p>Backstory.</p>" },
+  });
+  const { content } = renderPayloadToFiles(payload).files[0];
+  assert.ok(!content.includes("secret lair"), "body dropped");
+  assert.ok(!content.includes("Backstory"), "biography dropped");
+  assert.ok(!content.includes("lair.webp"), "front image dropped");
+  const frontmatter = JSON.parse(content.match(/^---\n([\s\S]*?)\n---\n/)[1]);
+  assert.equal(frontmatter.unpublished, true);
+  assert.equal(frontmatter.foundryUuid, post.uuid); // still trackable, e.g. for retraction
+  assert.equal(frontmatter.title, post.title);
+});
+
+test("a published post still carries its full text", () => {
+  const payload = samplePayload();
+  payload.journals[0].posts[0].html = "<p>Visible.</p>";
+  assert.ok(renderPayloadToFiles(payload).files[0].content.includes("<p>Visible.</p>"));
+});

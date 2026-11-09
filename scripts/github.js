@@ -10,6 +10,7 @@
  */
 
 import { mapWithConcurrency } from "./concurrency.js";
+import { stripUnpublishedContent } from "./render.js";
 
 const API_BASE = "https://api.github.com";
 
@@ -190,12 +191,10 @@ export async function retractDeletedPost({ owner, repo, path, token, branch, exp
   if (expectedUuid && frontmatter.foundryUuid !== expectedUuid) return true;
   if (frontmatter.unpublished) return true;
 
-  const updated = {
-    ...frontmatter,
-    unpublished: true,
-    updatedAt: Date.now(),
-  };
-  const content = `---\n${JSON.stringify(updated, null, 2)}\n---\n${match[2]}`;
+  // Kept only as the marker that hides it from the site -- without its text,
+  // biography or front image, same as an unpublished post (render.js).
+  const updated = { ...stripUnpublishedContent(frontmatter), updatedAt: Date.now() };
+  const content = `---\n${JSON.stringify(updated, null, 2)}\n---\n`;
 
   const res = await putOnce({
     owner,

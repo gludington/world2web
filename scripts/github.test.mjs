@@ -180,8 +180,14 @@ function frontmatterFile(frontmatter, body = "\n<p>hi</p>\n") {
   return `---\n${JSON.stringify(frontmatter, null, 2)}\n---\n${body}`;
 }
 
-test("retractDeletedPost flips unpublished: true and bumps updatedAt, keeping everything else", async () => {
-  const original = { title: "Gone", author: { name: "Thoric" }, unpublished: false, updatedAt: 100 };
+test("retractDeletedPost marks the post unpublished and strips its text, biography and front image", async () => {
+  const original = {
+    title: "Gone",
+    author: { name: "Thoric", bio: "<p>A long backstory.</p>" },
+    frontImage: "/assets/abc.webp",
+    unpublished: false,
+    updatedAt: 100,
+  };
   await withMockFetch(
     {
       "GET /repos/me/repo/contents/post.md": jsonResponse(200, {
@@ -198,10 +204,14 @@ test("retractDeletedPost flips unpublished: true and bumps updatedAt, keeping ev
       const match = pushedContent.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
       const pushedFrontmatter = JSON.parse(match[1]);
       assert.equal(pushedFrontmatter.unpublished, true);
-      assert.equal(pushedFrontmatter.title, "Gone"); // everything else untouched
+      assert.equal(pushedFrontmatter.title, "Gone"); // tracking fields kept
       assert.equal(pushedFrontmatter.author.name, "Thoric");
       assert.ok(pushedFrontmatter.updatedAt > 100); // bumped
-      assert.equal(match[2], "\n<p>hi</p>\n"); // body untouched, byte-identical
+      // Content gone: a GM who deletes a page expects its text gone from the
+      // (often public) repo, not just hidden from the site.
+      assert.equal(match[2], "");
+      assert.equal(pushedFrontmatter.author.bio, "");
+      assert.equal(pushedFrontmatter.frontImage, "");
       assert.equal(put.body.sha, "abc123");
     },
   );
