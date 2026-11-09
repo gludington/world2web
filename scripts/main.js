@@ -239,47 +239,23 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true,
   });
-  // The GitHub token, stored only in this browser ("client" scope: the
-  // browser's own localStorage, never sent to the Foundry server). Both world
-  // AND user scoped settings are sent to every connected client -- the server
-  // loads all Setting documents unfiltered, and the client keeps user-scoped
-  // ones in the same shared collection -- so either would put the token in
-  // every player's browser (confirmed live for both). Each GM enters it once
-  // per browser they publish from, through the GitHub Connection button or
-  // the Setup Wizard's last step.
-  // Keyed by repository ("owner/repo"), because client settings aren't per
-  // world: they live in the browser's localStorage under the setting's plain
-  // name, shared by every world on the same Foundry server. Two worlds
-  // publishing to different repos (each with a token limited to its own
-  // repo) each find their own; two worlds on the same repo share one.
-  game.settings.register(MODULE_ID, "githubBrowserTokens", {
-    scope: "client",
-    config: false,
-    type: Object,
-    default: {},
-  });
-  // A single browser token, from an unreleased build before the map above.
-  // Kept registered only so migrateLegacyToken() can move it into the map.
-  game.settings.register(MODULE_ID, "githubBrowserToken", {
-    scope: "client",
-    config: false,
-    type: String,
-    default: "",
-  });
-  // Earlier homes of the token, both readable by players. Kept registered
-  // only so migrateLegacyToken() can move the value out and erase them.
-  game.settings.register(MODULE_ID, "githubUserToken", {
-    scope: "user",
-    config: false,
-    type: String,
-    default: "",
-  });
+  // The GitHub token: a world setting, edited in the GitHub Connection panel
+  // (GM only). Note that Foundry sends every world setting to every connected
+  // user, so players' browsers can read it -- which is why the setup guidance
+  // is a fine-grained token limited to the one site repository. (Neither user
+  // nor client scope fixes that well: user-scoped settings reach players too,
+  // and client scope means re-entering it in every browser.)
   game.settings.register(MODULE_ID, "githubToken", {
     scope: "world",
     config: false,
     type: String,
     default: "",
   });
+  // Where unreleased builds of 0.23.0 briefly kept the token. Registered only
+  // so migrateTokenToWorld() can move a token back and clear them.
+  game.settings.register(MODULE_ID, "githubBrowserTokens", { scope: "client", config: false, type: Object, default: {} });
+  game.settings.register(MODULE_ID, "githubBrowserToken", { scope: "client", config: false, type: String, default: "" });
+  game.settings.register(MODULE_ID, "githubUserToken", { scope: "user", config: false, type: String, default: "" });
 
   class GithubConnectionMenu extends foundry.applications.api.ApplicationV2 {
     static DEFAULT_OPTIONS = { id: "world2web-github-connection-menu" };
@@ -378,39 +354,10 @@ const screenNotify = {
   error: (text) => ui.notifications.error(text),
 };
 
-/** @returns {string} The key a repository's token is stored under in this browser. */
-function repoTokenKey(owner, repo) {
-  return `${String(owner ?? "").trim()}/${String(repo ?? "").trim()}`.toLowerCase();
-}
-
-/**
- * This browser's GitHub token for `owner/repo`, if it has one -- see the githubBrowserTokens
- * setting.
- *
- * @returns {string}
- */
-function getBrowserToken(owner, repo) {
-  const tokens = game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {};
-  return String(tokens[repoTokenKey(owner, repo)] ?? "").trim();
-}
-
-/**
- * Keeps `token` in this browser for `owner/repo` (or forgets it, when blank).
- *
- * @returns {Promise<void>}
- */
-async function setBrowserToken(owner, repo, token) {
-  const tokens = { ...(game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {}) };
-  const key = repoTokenKey(owner, repo);
-  if (token?.trim()) tokens[key] = token.trim();
-  else delete tokens[key];
-  await game.settings.set(MODULE_ID, "githubBrowserTokens", tokens);
-}
-
 function getGithubConfig() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = getBrowserToken(owner, repo);
+  const token = game.settings.get(MODULE_ID, "githubToken")?.trim();
   const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
   if (!owner || !repo || !token) return null;
   return { owner, repo, token, branch };
@@ -569,8 +516,8 @@ async function trackDeletedPage(page, entry) {
  *   scoping of its own: it just operates on whatever ends up in this already-scoped payload.
  * @param {User|null} [options.forUser] A player's publish, run in a GM's browser on that player's
  *   behalf by the publish relay (see "Publish relay" below): scoped exactly like
- *   `scopedToCaller`, but to `forUser` rather than the current user. Players never hold the
- *   GitHub token, so this is how their publishes happen.
+ *   `scopedToCaller`, but to `forUser` rather than the current user. Publishing writes world
+ *   settings that players aren't allowed to change, so this is how their publishes happen.
  * @param {{info: Function, warn: Function, error: Function}} [options.notify] Where result
  *   messages go: on screen by default; the relay collects them to send back to the player.
  * @returns {Promise<void>}
@@ -852,22 +799,20 @@ Hooks.once("ready", () => {
   // Exposed for console use: game.modules.get("world2web").api.collect()
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
   registerPublishRelay();
-  // The migration first: queued publishes need this GM's token in place.
-  migrateLegacyToken().then(processQueuedPublishes);
+  // The token move first: queued publishes need the token in place.
+  migrateTokenToWorld().then(processQueuedPublishes);
   showQueuedPublishResult();
 });
 
-// --- Connect this browser --------------------------------------------------------
+// --- Connect to GitHub ------------------------------------------------------------
 //
-// The token lives in each browser separately (players must never receive it,
-// and Foundry has nowhere server-side to hide it from them). Rather than an
-// error that sends the GM off to the settings, a browser without the token
-// gets asked for it right where it's needed -- and its password manager can
-// fill it in from then on.
+// When the repository is set up but there's no token (never entered, or
+// cleared), a GM publishing gets asked for it right there rather than given
+// an error that sends them off to the settings.
 
 /**
- * Whether this browser can publish, asking for the token first if the repository is configured
- * but this browser hasn't been given the token yet.
+ * Whether publishing can go ahead, asking for the token first if the repository is configured
+ * but no token is saved.
  *
  * @returns {Promise<boolean>} `true` once publishing can go ahead.
  */
@@ -884,7 +829,7 @@ async function ensureBrowserConnected() {
 
 /**
  * Asks for the GitHub token for an already-configured repository, checks it can reach the repo,
- * and keeps it in this browser.
+ * and saves it.
  *
  * @param {string} owner
  * @param {string} repo
@@ -927,16 +872,17 @@ async function openConnectBrowserDialog(owner, repo, errorMessage = null) {
     });
     return openConnectBrowserDialog(owner, repo, message);
   }
-  await setBrowserToken(owner, repo, token.token);
+  await game.settings.set(MODULE_ID, "githubToken", token.token);
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BrowserConnected")}`);
   return true;
 }
 
 // --- Publish relay -----------------------------------------------------------
 //
-// The GitHub token is stored per GM user and never reaches players' browsers,
-// so a player's Publish to Web (Allow Player Self-Publish) can't push from
-// their own browser. Instead their browser asks the active GM's browser, over
+// A player's Publish to Web (Allow Player Self-Publish) runs in a GM's browser
+// rather than their own: publishing writes world settings (content hashes,
+// published paths, sync state) that players aren't allowed to change. Their
+// browser asks the active GM's browser, over
 // the module's socket, to publish on their behalf: scoped to exactly what that
 // player owns, with the result messages sent back to them. A GM has to be
 // connected for this; the player is told so if none is.
@@ -1087,38 +1033,38 @@ async function publishViaGM() {
 }
 
 /**
- * Moves a token out of the places earlier versions kept it -- the world setting (0.22.0 and
- * before) and a user-scoped setting (an unreleased 0.23.0 build) -- into this browser's own
- * storage, then erases them. Both were sent to every connected client, players included. Erases
- * *every* GM's user-scoped copy, not just this one's, since all of them reach players. Any other GM
- * enters their own token through the GitHub Connection button.
+ * Unreleased 0.23.0 builds briefly kept the token outside the world setting: per user (which
+ * turned out to reach players anyway) and then per browser. If this world has no token but one of
+ * those does, move it back into the world setting; then clear the leftovers, so nothing stale is
+ * left behind. Only touches anything for a GM, and only when there's something to move or clear.
  *
  * @returns {Promise<void>}
  */
-async function migrateLegacyToken() {
+async function migrateTokenToWorld() {
   if (!game.user.isGM) return;
-  const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
-  const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const userCopies = game.settings.storage
-    .get("world")
-    .filter((doc) => doc.key === `${MODULE_ID}.githubUserToken`);
-  const legacyWorld = game.settings.get(MODULE_ID, "githubToken")?.trim();
-  const legacyMine = game.settings.get(MODULE_ID, "githubUserToken")?.trim();
-  const legacyBrowser = game.settings.get(MODULE_ID, "githubBrowserToken")?.trim();
-  if (!legacyWorld && !legacyMine && !legacyBrowser && !userCopies.length) return;
   try {
-    const found = legacyBrowser || legacyMine || legacyWorld;
-    if (found && owner && repo && !getBrowserToken(owner, repo)) await setBrowserToken(owner, repo, found);
-    if (legacyBrowser) await game.settings.set(MODULE_ID, "githubBrowserToken", "");
-    // The shared copies: erase them whether or not this world has a repo
-    // configured -- they're readable by every player either way.
-    if (legacyWorld) await game.settings.set(MODULE_ID, "githubToken", "");
-    for (const doc of userCopies) await doc.delete();
-    if (legacyWorld || userCopies.length) {
-      ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.TokenMigrated")}`, { permanent: true });
+    const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
+    const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
+    const browserTokens = game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {};
+    const repoKey = `${owner ?? ""}/${repo ?? ""}`.toLowerCase();
+    const candidate =
+      String(browserTokens[repoKey] ?? "").trim() ||
+      game.settings.get(MODULE_ID, "githubBrowserToken")?.trim() ||
+      game.settings.get(MODULE_ID, "githubUserToken")?.trim();
+    if (candidate && !game.settings.get(MODULE_ID, "githubToken")?.trim()) {
+      await game.settings.set(MODULE_ID, "githubToken", candidate);
+    }
+    if (repoKey in browserTokens) {
+      const rest = { ...browserTokens };
+      delete rest[repoKey];
+      await game.settings.set(MODULE_ID, "githubBrowserTokens", rest);
+    }
+    if (game.settings.get(MODULE_ID, "githubBrowserToken")) await game.settings.set(MODULE_ID, "githubBrowserToken", "");
+    for (const doc of game.settings.storage.get("world").filter((d) => d.key === `${MODULE_ID}.githubUserToken`)) {
+      await doc.delete();
     }
   } catch (err) {
-    console.error(`${MODULE_ID} | Couldn't move the GitHub token out of shared settings`, err);
+    console.error(`${MODULE_ID} | Couldn't move the GitHub token back to the world setting`, err);
   }
 }
 
@@ -1200,8 +1146,8 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
       // allowPlayerSelfPublish is on) is scoped to just what they own --
       // see the "Player self-publish" section further down for what that
       // actually touches.
-      // Players never hold the GitHub token (it's per GM user), so their
-      // publish runs in a connected GM's browser -- see "Publish relay".
+      // A player's publish runs in a connected GM's browser -- see
+      // "Publish relay".
       if (game.user.isGM) {
         if (await ensureBrowserConnected()) await publishToGitHub();
       } else await publishViaGM();
@@ -1521,10 +1467,9 @@ async function openDeployStep2CreateToken(owner, repoName) {
  */
 /**
  * The GitHub token input, shared by the GitHub Connection panel, the Setup Wizard's last step and
- * the "Connect this browser" prompt. Marked up as a username + password pair -- the repository as
+ * the "Connect to GitHub" prompt. Marked up as a username + password pair -- the repository as
  * the (hidden) username, the token as the password -- so browsers and password managers offer to
- * save it and fill it in on the GM's other devices. That's what makes keeping the token in each
- * browser (see the githubBrowserToken setting) bearable.
+ * save it and fill it in later.
  *
  * @param {{owner?: string, repo?: string, token?: string}} values
  * @returns {string} HTML.
@@ -1632,8 +1577,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
   if (result.branch !== undefined) await game.settings.set(MODULE_ID, "githubBranch", result.branch || "main");
-  // This browser only, for this repository -- see githubBrowserTokens.
-  await setBrowserToken(result.owner, result.repo, result.token);
+  await game.settings.set(MODULE_ID, "githubToken", result.token);
 
   // game.settings.set() only updates the stored value -- it doesn't touch
   // an already-open Configure Settings window's own rendered <input>
@@ -1667,7 +1611,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
 async function openDeploySiteDialog() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = getBrowserToken(owner, repo);
+  const token = game.settings.get(MODULE_ID, "githubToken")?.trim();
   const alreadyConfigured = !!(owner && repo && token);
 
   const step1 = await openDeployStep1ChooseHost(alreadyConfigured, owner, repo);
@@ -1691,7 +1635,7 @@ async function openGithubConnectionDialog() {
     {
       owner: game.settings.get(MODULE_ID, "githubOwner")?.trim(),
       repo: game.settings.get(MODULE_ID, "githubRepo")?.trim(),
-      token: getBrowserToken(game.settings.get(MODULE_ID, "githubOwner"), game.settings.get(MODULE_ID, "githubRepo")),
+      token: game.settings.get(MODULE_ID, "githubToken")?.trim(),
       branch: game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main",
     },
     null,
