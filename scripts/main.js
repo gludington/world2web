@@ -208,7 +208,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubOwner.Name",
     hint: "WORLD2WEB.Settings.GithubOwner.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "",
   });
@@ -216,7 +216,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubRepo.Name",
     hint: "WORLD2WEB.Settings.GithubRepo.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "",
   });
@@ -224,7 +224,7 @@ Hooks.once("init", () => {
     name: "WORLD2WEB.Settings.GithubBranch.Name",
     hint: "WORLD2WEB.Settings.GithubBranch.Hint",
     scope: "world",
-    config: true,
+    config: false, // edited in the GitHub Connection panel
     type: String,
     default: "main",
   });
@@ -1319,6 +1319,17 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
       <label>${t("Settings.GithubRepo.Name")}</label>
       <input type="text" name="repo" value="${escapeHtml(defaults.repo ?? "")}">
     </div>
+    ${
+      // Branch only in the standalone GitHub Connection panel: a site created
+      // by the wizard always starts on "main".
+      standalone
+        ? `<div class="form-group">
+      <label>${t("Settings.GithubBranch.Name")}</label>
+      <input type="text" name="branch" value="${escapeHtml(defaults.branch ?? "main")}">
+      <p class="hint">${t("Settings.GithubBranch.Hint")}</p>
+    </div>`
+        : ""
+    }
     <div class="form-group">
       <label>${t("Settings.GithubToken.Name")}</label>
       <input type="password" name="token" value="${escapeHtml(defaults.token ?? "")}">
@@ -1340,6 +1351,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
           owner: button.form.elements.owner.value.trim(),
           repo: button.form.elements.repo.value.trim(),
           token: button.form.elements.token.value.trim(),
+          branch: button.form.elements.branch?.value.trim(),
         }),
       },
       // Only offered after a failed connection check -- an escape hatch for
@@ -1356,6 +1368,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
                 owner: button.form.elements.owner.value.trim(),
                 repo: button.form.elements.repo.value.trim(),
                 token: button.form.elements.token.value.trim(),
+                branch: button.form.elements.branch?.value.trim(),
               }),
             },
           ]
@@ -1371,7 +1384,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
   // message, instead of as a vague failure on the first Publish to Web. On
   // failure, re-open this same step with everything still filled in.
   if (!result.force) {
-    const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
+    const branch = result.branch || game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
     const check = await checkRepoAccess({ ...result, branch });
     if (!check.ok) {
       const message = t(`Dialog.RepoCheck.${check.reason}`, {
@@ -1386,6 +1399,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
 
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
+  if (result.branch !== undefined) await game.settings.set(MODULE_ID, "githubBranch", result.branch || "main");
   // Per GM user, never per world -- see the githubUserToken setting.
   await game.settings.set(MODULE_ID, "githubUserToken", result.token);
 
@@ -1446,6 +1460,7 @@ async function openGithubConnectionDialog() {
       owner: game.settings.get(MODULE_ID, "githubOwner")?.trim(),
       repo: game.settings.get(MODULE_ID, "githubRepo")?.trim(),
       token: game.settings.get(MODULE_ID, "githubUserToken")?.trim(),
+      branch: game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main",
     },
     null,
     { standalone: true },

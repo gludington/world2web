@@ -17,7 +17,7 @@
       "GithubConnection": {
         "Name": "GitHub Connection",
         "Label": "Edit Connection",
-        "Hint": "Your site's GitHub repository and your personal access token. The token is stored for your user only -- other users, including players, never receive it -- so each GM who publishes enters their own."
+        "Hint": "Your site's GitHub repository (owner, name and branch) and your personal access token, in one place. The token is stored for your user only -- other users, including players, never receive it -- so each GM who publishes enters their own."
       },
       "GithubOwner": {
         "Name": "GitHub Repo Owner",
@@ -161,7 +161,7 @@
         "bad-token": "GitHub rejected the token. Check that you copied all of it, and that it hasn't expired.",
         "repo-not-found": "Couldn't find <strong>{owner}/{repo}</strong> with this token. Check the spelling of both the username and the repo name, and that the token was granted this repo under \"Only select repositories\".",
         "no-contents-permission": "The token can see <strong>{owner}/{repo}</strong> but doesn't have the \"Contents\" permission. Edit the token on GitHub and set Contents to \"Read and write\".",
-        "branch-not-found": "<strong>{owner}/{repo}</strong> has no branch named \"{branch}\". If your host just created the repo, wait a minute and try again; otherwise change the GitHub Branch setting.",
+        "branch-not-found": "<strong>{owner}/{repo}</strong> has no branch named \"{branch}\". If your host just created the repo, wait a minute and try again; otherwise check the branch name in the GitHub Connection panel.",
         "network": "Couldn't reach GitHub. Check your connection, or use Save Anyway to skip this check.",
         "unexpected": "GitHub returned an unexpected response ({status}). Try again, or use Save Anyway to skip this check."
       },
