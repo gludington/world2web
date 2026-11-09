@@ -88,7 +88,10 @@ You need some familiarity with Git, Node.js and Astro for either of these.
 
 ## Security note
 
-The GitHub token is stored in your world's settings. Create it as the Setup Wizard suggests (a
+The GitHub token is stored for your Foundry user only: other users, players included, never
+receive it, and each GM who publishes enters their own. (Before 0.23.0 it was a world setting that
+every player's browser received; updating moves it automatically.) Players who are allowed to
+publish do so through a connected GM's browser. Create the token as the Setup Wizard suggests (a
 fine-grained token with access to **only your site's repository** and **Contents: Read and
 write**), so the most anyone could ever do with it is change that one site. Don't reuse a broader
 token here.

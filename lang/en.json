@@ -7,12 +7,17 @@
       },
       "AllowPlayerSelfPublish": {
         "Name": "Allow Player Self-Publish",
-        "Hint": "Lets a player who owns a journal entry (Foundry's own Owner permission) see and use that entry's Publishing Settings, Post Settings, and publish controls themselves.  Will communicate the github token to their browser, so only enable this if you trust your players not to abuse it. Off by default."
+        "Hint": "Lets a player who owns a journal entry (Foundry's own Owner permission) see and use that entry's Publishing Settings, Post Settings, and publish controls themselves. Their Publish to Web runs through a connected GM's browser, and only covers journals they own; players never receive the GitHub token. Off by default."
       },
       "DeploySite": {
         "Name": "Set Up Your Site",
         "Label": "Setup Wizard",
         "Hint": "Create a world2web site on Netlify, Cloudflare, or Vercel from the site template.  Requires an account at that provider, as well as a GitHub account."
+      },
+      "GithubConnection": {
+        "Name": "GitHub Connection",
+        "Label": "Edit Connection",
+        "Hint": "Your site's GitHub repository and your personal access token. The token is stored for your user only -- other users, including players, never receive it -- so each GM who publishes enters their own."
       },
       "GithubOwner": {
         "Name": "GitHub Repo Owner",
@@ -73,7 +78,12 @@
       "PostSettingsSaved": "post settings saved for \"{name}\".",
       "DeploySiteSaved": "connected to GitHub and saved. Mark a journal as published, publish a page, then click Publish to Web.",
       "SiteUpdated": "your site is being updated to World2Web site version {version}.",
-      "HomepageLinksSaved": "saved {count} homepage link(s). They'll appear on your site after the next Publish to Web."
+      "HomepageLinksSaved": "saved {count} homepage link(s). They'll appear on your site after the next Publish to Web.",
+      "TokenMigrated": "your GitHub token is now stored for your user only, so players no longer receive it. Any other GM who publishes needs to enter their own token under Configure Settings → World2Web → GitHub Connection.",
+      "RelayRefused": "your publish was refused: Allow Player Self-Publish is off.",
+      "RelayPublishedFor": "published {name}'s journals for them.",
+      "RelayNoGM": "a GM needs to be connected to publish. Your changes are saved, so try again when a GM is online.",
+      "RelayTimeout": "no reply from the GM's browser. The publish may still be running; check with your GM."
     },
     "Button": {
       "DevSync": "Dev Sync",
@@ -160,7 +170,8 @@
       "HomepageLinksNamePlaceholder": "Name, e.g. Discord",
       "HomepageLinksAdd": "Add link",
       "HomepageLinksRemove": "Remove this link",
-      "HomepageLinksInvalid": "These need a full web address starting with https:// (or http://): {names}. Fix or remove them, then save again."
+      "HomepageLinksInvalid": "These need a full web address starting with https:// (or http://): {names}. Fix or remove them, then save again.",
+      "GithubConnectionTitle": "GitHub Connection"
     }
   }
 }

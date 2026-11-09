@@ -239,13 +239,44 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true,
   });
-  game.settings.register(MODULE_ID, "githubToken", {
-    name: "WORLD2WEB.Settings.GithubToken.Name",
-    hint: "WORLD2WEB.Settings.GithubToken.Hint",
-    scope: "world",
-    config: true,
+  // The GitHub token, stored per GM user ("user" scope) -- never per world.
+  // Foundry sends every world setting to every connected user, so a world-
+  // scoped token reached every player's browser (confirmed live: a player
+  // could read it with game.settings.get). A user-scoped setting is only
+  // ever sent to that user. Not shown in Configure Settings: GMs set it
+  // through the GitHub Connection button or the Setup Wizard's last step,
+  // and players never see a token field at all.
+  game.settings.register(MODULE_ID, "githubUserToken", {
+    scope: "user",
+    config: false,
     type: String,
     default: "",
+  });
+  // Where the token used to live, world-scoped. Kept registered only so
+  // migrateLegacyToken() can read it once and blank it for everyone.
+  game.settings.register(MODULE_ID, "githubToken", {
+    scope: "world",
+    config: false,
+    type: String,
+    default: "",
+  });
+
+  class GithubConnectionMenu extends foundry.applications.api.ApplicationV2 {
+    static DEFAULT_OPTIONS = { id: "world2web-github-connection-menu" };
+
+    async render(...args) {
+      await openGithubConnectionDialog();
+      return this;
+    }
+  }
+
+  game.settings.registerMenu(MODULE_ID, "githubConnectionMenu", {
+    name: "WORLD2WEB.Settings.GithubConnection.Name",
+    label: "WORLD2WEB.Settings.GithubConnection.Label",
+    hint: "WORLD2WEB.Settings.GithubConnection.Hint",
+    icon: "fa-brands fa-github",
+    type: GithubConnectionMenu,
+    restricted: true,
   });
 
   game.settings.register(MODULE_ID, "siteTheme", {
@@ -320,10 +351,17 @@ Hooks.once("init", () => {
  *   owner/repo/token/branch settings, or `null` if owner, repo, or token is unset/blank. `branch`
  *   falls back to `"main"` if unset.
  */
+/** Result messages shown on this screen -- {@link publishToGitHub}'s default `notify`. */
+const screenNotify = {
+  info: (text) => ui.notifications.info(text),
+  warn: (text) => ui.notifications.warn(text),
+  error: (text) => ui.notifications.error(text),
+};
+
 function getGithubConfig() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = game.settings.get(MODULE_ID, "githubToken")?.trim();
+  const token = game.settings.get(MODULE_ID, "githubUserToken")?.trim();
   const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
   if (!owner || !repo || !token) return null;
   return { owner, repo, token, branch };
@@ -367,12 +405,12 @@ function getGithubConfig() {
  * @returns {Promise<number>} The count actually retracted, for the publish notification. `0` if
  *   nothing was pending (or, when scoped, nothing pending belonged to the caller).
  */
-async function retractPendingDeletions(config, { scopedToCaller = false } = {}) {
+async function retractPendingDeletions(config, { scopedToCaller = false, userId = game.user.id } = {}) {
   const pending = game.settings.get(MODULE_ID, "pendingDeletions");
   const paths = game.settings.get(MODULE_ID, "publishedPaths");
   const pendingUuids = scopedDeletionUuids(pending, {
     scopedToCaller,
-    userId: game.user.id,
+    userId,
     ownerLevel: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER,
   });
   if (pendingUuids.length === 0) return 0;
@@ -480,18 +518,24 @@ async function trackDeletedPage(page, entry) {
  *   `scopedToCaller`) -- so a player's publish only ever touches what's actually theirs.
  *   Everything else here (asset fetching, `pushFiles`, `contentHashes`, `publishedPaths`) needs no
  *   scoping of its own: it just operates on whatever ends up in this already-scoped payload.
+ * @param {User|null} [options.forUser] A player's publish, run in a GM's browser on that player's
+ *   behalf by the publish relay (see "Publish relay" below): scoped exactly like
+ *   `scopedToCaller`, but to `forUser` rather than the current user. Players never hold the
+ *   GitHub token, so this is how their publishes happen.
+ * @param {{info: Function, warn: Function, error: Function}} [options.notify] Where result
+ *   messages go: on screen by default; the relay collects them to send back to the player.
  * @returns {Promise<void>}
  */
-async function publishToGitHub({ scopedToCaller = false } = {}) {
+async function publishToGitHub({ scopedToCaller = false, forUser = null, notify = screenNotify } = {}) {
   const config = getGithubConfig();
   if (!config) {
-    ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
+    notify.error(`${t("Notify.Prefix")}: ${t("Notify.MissingGithubConfig")}`);
     return;
   }
 
-  const payload = collectJournalData({ scopedToCaller });
+  const payload = collectJournalData({ scopedToCaller, scopedToUser: forUser });
   if (payload.journalCount === 0) {
-    ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
+    notify.warn(`${t("Notify.Prefix")}: ${t("Notify.NothingToPublish")}`);
     return;
   }
 
@@ -547,7 +591,7 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
       token: config.token,
       branch: config.branch,
     },
-    { scopedToCaller },
+    { scopedToCaller: scopedToCaller || !!forUser, userId: forUser?.id },
   );
 
   // Every post actually in this payload -- published or already-
@@ -588,15 +632,17 @@ async function publishToGitHub({ scopedToCaller = false } = {}) {
   // still means everything already matched GitHub. Drives the
   // uncommitted/committed coloring on the per-page and sync buttons (see
   // isPagePending()).
-  await markSynced();
+  // A player's publish (forUser) covers only what they own, so it mustn't
+  // mark the GM's own pending changes as synced too.
+  if (!forUser) await markSynced();
 
   if (sitePin && pushed.includes(sitePin.file.path)) {
-    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
+    notify.info(`${t("Notify.Prefix")}: ${t("Notify.SiteUpdated", { version: sitePin.version })}`);
   }
 
   const totalRetracted = retractedCount + renamedRetractedCount;
   const total = pushed.length + pushedAssets.length + totalRetracted;
-  ui.notifications.info(
+  notify.info(
     `${t("Notify.Prefix")}: ${
       total > 0
         ? t("Notify.Published", { posts: pushed.length, assets: pushedAssets.length, retracted: totalRetracted })
@@ -756,7 +802,112 @@ Hooks.once("ready", () => {
   const mod = game.modules.get(MODULE_ID);
   // Exposed for console use: game.modules.get("world2web").api.collect()
   mod.api = { collect: collectJournalData, download: downloadJournalData, publish: publishToGitHub };
+  migrateLegacyToken();
+  registerPublishRelay();
 });
+
+// --- Publish relay -----------------------------------------------------------
+//
+// The GitHub token is stored per GM user and never reaches players' browsers,
+// so a player's Publish to Web (Allow Player Self-Publish) can't push from
+// their own browser. Instead their browser asks the active GM's browser, over
+// the module's socket, to publish on their behalf: scoped to exactly what that
+// player owns, with the result messages sent back to them. A GM has to be
+// connected for this; the player is told so if none is.
+
+const RELAY_SOCKET = `module.${MODULE_ID}`;
+const RELAY_TIMEOUT_MS = 10 * 60 * 1000; // a first publish with many images takes a while
+const pendingRelays = new Map(); // requestId -> resolve, in the requesting player's browser
+
+/** Listens for publish requests (GMs) and their results (players). Called once, on "ready". */
+function registerPublishRelay() {
+  game.socket.on(RELAY_SOCKET, (message) => {
+    if (message?.type === "publish-request") handlePublishRequest(message);
+    else if (message?.type === "publish-result" && message.userId === game.user.id) {
+      pendingRelays.get(message.requestId)?.(message);
+      pendingRelays.delete(message.requestId);
+    }
+  });
+}
+
+/**
+ * In a GM's browser: publish for the requesting player. Only the active GM responds, so a world
+ * with several GMs connected publishes once.
+ *
+ * @param {{requestId: string, userId: string}} request
+ * @returns {Promise<void>}
+ */
+async function handlePublishRequest({ requestId, userId }) {
+  if (!game.user.isGM || game.users.activeGM?.id !== game.user.id) return;
+  const reply = (messages) =>
+    game.socket.emit(RELAY_SOCKET, { type: "publish-result", requestId, userId, messages });
+  const player = game.users.get(userId);
+  if (!player || player.isGM || !game.settings.get(MODULE_ID, "allowPlayerSelfPublish")) {
+    return reply([{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayRefused")}` }]);
+  }
+
+  const messages = [];
+  const collect = (level) => (text) => messages.push({ level, text });
+  try {
+    await publishToGitHub({ forUser: player, notify: { info: collect("info"), warn: collect("warn"), error: collect("error") } });
+  } catch (err) {
+    console.error(`${MODULE_ID} | publish for ${player.name} failed`, err);
+    messages.push({ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}` });
+  }
+  ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.RelayPublishedFor", { name: player.name })}`);
+  reply(messages);
+}
+
+/**
+ * In a player's browser: ask the active GM's browser to publish what this player owns, and show
+ * its result messages here.
+ *
+ * @returns {Promise<void>}
+ */
+async function publishViaGM() {
+  if (!game.users.activeGM) {
+    ui.notifications.warn(`${t("Notify.Prefix")}: ${t("Notify.RelayNoGM")}`);
+    return;
+  }
+  const requestId = foundry.utils.randomID();
+  const result = await new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      pendingRelays.delete(requestId);
+      resolve({ messages: [{ level: "error", text: `${t("Notify.Prefix")}: ${t("Notify.RelayTimeout")}` }] });
+    }, RELAY_TIMEOUT_MS);
+    pendingRelays.set(requestId, (message) => {
+      clearTimeout(timer);
+      resolve(message);
+    });
+    game.socket.emit(RELAY_SOCKET, { type: "publish-request", requestId, userId: game.user.id });
+  });
+  for (const { level, text } of result.messages ?? []) {
+    (ui.notifications[level] ?? ui.notifications.info).call(ui.notifications, text);
+  }
+}
+
+/**
+ * One-time move of a token saved before 0.23.0, when it was a world setting that every player's
+ * browser received. The first GM to load the world copies it into their own user-scoped setting
+ * (unless they already have one), then blanks the world copy so players stop receiving it. Any
+ * other GM enters their own token through the GitHub Connection button.
+ *
+ * @returns {Promise<void>}
+ */
+async function migrateLegacyToken() {
+  if (!game.user.isGM) return;
+  const legacy = game.settings.get(MODULE_ID, "githubToken")?.trim();
+  if (!legacy) return;
+  try {
+    if (!game.settings.get(MODULE_ID, "githubUserToken")?.trim()) {
+      await game.settings.set(MODULE_ID, "githubUserToken", legacy);
+    }
+    await game.settings.set(MODULE_ID, "githubToken", "");
+    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.TokenMigrated")}`, { permanent: true });
+  } catch (err) {
+    console.error(`${MODULE_ID} | Couldn't move the GitHub token to user storage`, err);
+  }
+}
 
 /**
  * Builds (but doesn't insert) the Dev Sync button -- shared by the initial render and the
@@ -836,7 +987,10 @@ Hooks.on("renderJournalDirectory", (app, htmlEl) => {
       // allowPlayerSelfPublish is on) is scoped to just what they own --
       // see the "Player self-publish" section further down for what that
       // actually touches.
-      await publishToGitHub({ scopedToCaller: !game.user.isGM });
+      // Players never hold the GitHub token (it's per GM user), so their
+      // publish runs in a connected GM's browser -- see "Publish relay".
+      if (game.user.isGM) await publishToGitHub();
+      else await publishViaGM();
     } catch (err) {
       console.error(`${MODULE_ID} | publish to web failed`, err);
       ui.notifications.error(`${t("Notify.Prefix")}: ${t("Notify.PublishFailed", { error: err.message })}`);
@@ -1151,10 +1305,10 @@ async function openDeployStep2CreateToken(owner, repoName) {
  *   retyping the other two.
  * @returns {Promise<void>}
  */
-async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
+async function openDeployStep3SaveSettings(defaults, errorMessage = null, { standalone = false } = {}) {
   const error = errorMessage ? `<p class="notification error">${errorMessage}</p>` : "";
   const content = `
-    <p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>
+    ${standalone ? "" : `<p><strong>${t("Dialog.DeployStep3Of3")}</strong></p>`}
     ${error}
     <p>${t("Dialog.DeploySiteSaveIntro")}</p>
     <div class="form-group">
@@ -1173,7 +1327,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
   `;
 
   const result = await foundry.applications.api.DialogV2.wait({
-    window: { title: t("Dialog.DeploySiteTitle") },
+    window: { title: t(standalone ? "Dialog.GithubConnectionTitle" : "Dialog.DeploySiteTitle") },
     position: { width: 520 },
     content,
     buttons: [
@@ -1226,13 +1380,14 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
         branch: escapeHtml(branch),
         status: check.status ?? "",
       });
-      return openDeployStep3SaveSettings(result, message);
+      return openDeployStep3SaveSettings(result, message, { standalone });
     }
   }
 
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
-  await game.settings.set(MODULE_ID, "githubToken", result.token);
+  // Per GM user, never per world -- see the githubUserToken setting.
+  await game.settings.set(MODULE_ID, "githubUserToken", result.token);
 
   // game.settings.set() only updates the stored value -- it doesn't touch
   // an already-open Configure Settings window's own rendered <input>
@@ -1266,7 +1421,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null) {
 async function openDeploySiteDialog() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = game.settings.get(MODULE_ID, "githubToken")?.trim();
+  const token = game.settings.get(MODULE_ID, "githubUserToken")?.trim();
   const alreadyConfigured = !!(owner && repo && token);
 
   const step1 = await openDeployStep1ChooseHost(alreadyConfigured, owner, repo);
@@ -1276,6 +1431,25 @@ async function openDeploySiteDialog() {
   // old repo setting here -- it's what step 2 just told them to go create,
   // so step 3 needs to match it, not silently fall back to a stale value.
   await openDeployStep3SaveSettings({ owner, repo: step1.repoName || repo, token });
+}
+
+/**
+ * The GitHub Connection button in Configure Settings (GM only): the Setup Wizard's last step on
+ * its own -- repo owner, repo name and this GM's token, with the same connection check -- for
+ * changing a token or repo without creating a new site.
+ *
+ * @returns {Promise<void>}
+ */
+async function openGithubConnectionDialog() {
+  await openDeployStep3SaveSettings(
+    {
+      owner: game.settings.get(MODULE_ID, "githubOwner")?.trim(),
+      repo: game.settings.get(MODULE_ID, "githubRepo")?.trim(),
+      token: game.settings.get(MODULE_ID, "githubUserToken")?.trim(),
+    },
+    null,
+    { standalone: true },
+  );
 }
 
 /**
