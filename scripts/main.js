@@ -247,6 +247,19 @@ Hooks.once("init", () => {
   // every player's browser (confirmed live for both). Each GM enters it once
   // per browser they publish from, through the GitHub Connection button or
   // the Setup Wizard's last step.
+  // Keyed by repository ("owner/repo"), because client settings aren't per
+  // world: they live in the browser's localStorage under the setting's plain
+  // name, shared by every world on the same Foundry server. Two worlds
+  // publishing to different repos (each with a token limited to its own
+  // repo) each find their own; two worlds on the same repo share one.
+  game.settings.register(MODULE_ID, "githubBrowserTokens", {
+    scope: "client",
+    config: false,
+    type: Object,
+    default: {},
+  });
+  // A single browser token, from an unreleased build before the map above.
+  // Kept registered only so migrateLegacyToken() can move it into the map.
   game.settings.register(MODULE_ID, "githubBrowserToken", {
     scope: "client",
     config: false,
@@ -365,10 +378,39 @@ const screenNotify = {
   error: (text) => ui.notifications.error(text),
 };
 
+/** @returns {string} The key a repository's token is stored under in this browser. */
+function repoTokenKey(owner, repo) {
+  return `${String(owner ?? "").trim()}/${String(repo ?? "").trim()}`.toLowerCase();
+}
+
+/**
+ * This browser's GitHub token for `owner/repo`, if it has one -- see the githubBrowserTokens
+ * setting.
+ *
+ * @returns {string}
+ */
+function getBrowserToken(owner, repo) {
+  const tokens = game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {};
+  return String(tokens[repoTokenKey(owner, repo)] ?? "").trim();
+}
+
+/**
+ * Keeps `token` in this browser for `owner/repo` (or forgets it, when blank).
+ *
+ * @returns {Promise<void>}
+ */
+async function setBrowserToken(owner, repo, token) {
+  const tokens = { ...(game.settings.get(MODULE_ID, "githubBrowserTokens") ?? {}) };
+  const key = repoTokenKey(owner, repo);
+  if (token?.trim()) tokens[key] = token.trim();
+  else delete tokens[key];
+  await game.settings.set(MODULE_ID, "githubBrowserTokens", tokens);
+}
+
 function getGithubConfig() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = game.settings.get(MODULE_ID, "githubBrowserToken")?.trim();
+  const token = getBrowserToken(owner, repo);
   const branch = game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main";
   if (!owner || !repo || !token) return null;
   return { owner, repo, token, branch };
@@ -885,7 +927,7 @@ async function openConnectBrowserDialog(owner, repo, errorMessage = null) {
     });
     return openConnectBrowserDialog(owner, repo, message);
   }
-  await game.settings.set(MODULE_ID, "githubBrowserToken", token.token);
+  await setBrowserToken(owner, repo, token.token);
   ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.BrowserConnected")}`);
   return true;
 }
@@ -1055,20 +1097,26 @@ async function publishViaGM() {
  */
 async function migrateLegacyToken() {
   if (!game.user.isGM) return;
-  const worldStore = game.settings.storage.get("world");
-  const userCopies = worldStore.filter((doc) => doc.key === `${MODULE_ID}.githubUserToken`);
+  const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
+  const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
+  const userCopies = game.settings.storage
+    .get("world")
+    .filter((doc) => doc.key === `${MODULE_ID}.githubUserToken`);
   const legacyWorld = game.settings.get(MODULE_ID, "githubToken")?.trim();
   const legacyMine = game.settings.get(MODULE_ID, "githubUserToken")?.trim();
-  const hasUserCopies = userCopies.some((doc) => String(doc.value ?? "").replace(/"/g, "").trim());
-  if (!legacyWorld && !legacyMine && !hasUserCopies) return;
+  const legacyBrowser = game.settings.get(MODULE_ID, "githubBrowserToken")?.trim();
+  if (!legacyWorld && !legacyMine && !legacyBrowser && !userCopies.length) return;
   try {
-    const found = legacyMine || legacyWorld;
-    if (found && !game.settings.get(MODULE_ID, "githubBrowserToken")?.trim()) {
-      await game.settings.set(MODULE_ID, "githubBrowserToken", found);
-    }
+    const found = legacyBrowser || legacyMine || legacyWorld;
+    if (found && owner && repo && !getBrowserToken(owner, repo)) await setBrowserToken(owner, repo, found);
+    if (legacyBrowser) await game.settings.set(MODULE_ID, "githubBrowserToken", "");
+    // The shared copies: erase them whether or not this world has a repo
+    // configured -- they're readable by every player either way.
     if (legacyWorld) await game.settings.set(MODULE_ID, "githubToken", "");
     for (const doc of userCopies) await doc.delete();
-    ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.TokenMigrated")}`, { permanent: true });
+    if (legacyWorld || userCopies.length) {
+      ui.notifications.info(`${t("Notify.Prefix")}: ${t("Notify.TokenMigrated")}`, { permanent: true });
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | Couldn't move the GitHub token out of shared settings`, err);
   }
@@ -1584,8 +1632,8 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
   await game.settings.set(MODULE_ID, "githubOwner", result.owner);
   await game.settings.set(MODULE_ID, "githubRepo", result.repo);
   if (result.branch !== undefined) await game.settings.set(MODULE_ID, "githubBranch", result.branch || "main");
-  // This browser only -- see the githubBrowserToken setting.
-  await game.settings.set(MODULE_ID, "githubBrowserToken", result.token);
+  // This browser only, for this repository -- see githubBrowserTokens.
+  await setBrowserToken(result.owner, result.repo, result.token);
 
   // game.settings.set() only updates the stored value -- it doesn't touch
   // an already-open Configure Settings window's own rendered <input>
@@ -1619,7 +1667,7 @@ async function openDeployStep3SaveSettings(defaults, errorMessage = null, { stan
 async function openDeploySiteDialog() {
   const owner = game.settings.get(MODULE_ID, "githubOwner")?.trim();
   const repo = game.settings.get(MODULE_ID, "githubRepo")?.trim();
-  const token = game.settings.get(MODULE_ID, "githubBrowserToken")?.trim();
+  const token = getBrowserToken(owner, repo);
   const alreadyConfigured = !!(owner && repo && token);
 
   const step1 = await openDeployStep1ChooseHost(alreadyConfigured, owner, repo);
@@ -1643,7 +1691,7 @@ async function openGithubConnectionDialog() {
     {
       owner: game.settings.get(MODULE_ID, "githubOwner")?.trim(),
       repo: game.settings.get(MODULE_ID, "githubRepo")?.trim(),
-      token: game.settings.get(MODULE_ID, "githubBrowserToken")?.trim(),
+      token: getBrowserToken(game.settings.get(MODULE_ID, "githubOwner"), game.settings.get(MODULE_ID, "githubRepo")),
       branch: game.settings.get(MODULE_ID, "githubBranch")?.trim() || "main",
     },
     null,
