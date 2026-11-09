@@ -62,9 +62,10 @@ For **each** of Cloudflare, Netlify and Vercel:
 - [ ] **Delete** a published page in Foundry and publish: its file is removed too.
 - [ ] **Cancel** in Publishing Settings and Post Settings changes nothing.
 - [ ] **Players** (Allow Player Self-Publish on, a player who owns a journal):
-  - [ ] With a GM online, the player's Publish to Web works and only covers their journal.
-  - [ ] With no GM online, it's queued; when a GM connects it runs, and the player sees the
-        result.
+  - [ ] The player's Publish to Web works with **no GM online**, and only covers their own
+        journal (one commit).
+  - [ ] The GM's next Publish to Web after that runs cleanly (it catches up on the player's
+        bookkeeping).
   - [ ] Players don't see the Homepage field.
 - [ ] After updating the module to a newer version, the next publish moves the site's
       `@world2web/site` version to match ("your site is being updated…").

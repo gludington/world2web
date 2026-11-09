@@ -151,8 +151,13 @@ there still belongs to that page (its frontmatter `foundryUuid`), and a path thi
 never deleted. Nothing changed means no commit at all. `publishedPaths` and `pendingDeletions` are
 updated only after the commit lands, so a failed publish is simply retried next time.
 
-Safe to click repeatedly and with multiple publishers (players publish through the active GM's
-browser; see "Player self-publish"): a concurrent publish just means step 4 redoes the commit.
+Safe to click repeatedly and with multiple publishers (players can publish their own journals;
+see "Player self-publish"): a concurrent publish just means step 4 redoes the commit.
+
+A player's publish runs in their own browser, with the world's token, scoped to the journals they
+own. It skips the world-setting bookkeeping afterwards (`publishedPaths`, `pendingDeletions`,
+`lastSyncAt`), since players can't change world settings by default (`SETTINGS_MODIFY`); the GM's
+next publish recomputes it.
 
 The sections below describe the earlier per-file pipeline where noted; its write path
 (`pushFiles`, `putFile`, `pushBinaryAssets`, `retractDeletedPost`, the `contentHashes` cache) is
